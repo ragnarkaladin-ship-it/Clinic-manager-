@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: uid
+    // Fields:
+    //   - uid: string (required)
+    //   - name: string (required)
+    //   - email: string (required, email format)
+    //   - role: string (required, 'ward_doctor', 'consultant', 'admin')
+    //   - clinicType: string (optional, for consultants)
+    //
+    // Collection: bookings
+    // Document ID: auto-generated
+    // Fields:
+    //   - patientId: string (required)
+    //   - patientName: string (required)
+    //   - patientPhone: string (required)
+    //   - diagnosis: string (required)
+    //   - clinicType: string (required)
+    //   - reviewDate: string (required, ISO date)
+    //   - status: string (required, 'pending', 'attended', 'no-show')
+    //   - bookedBy: string (required, uid)
+    //   - bookedAt: string (required, ISO date-time)
+    //
+    // ===============================================================
+
+    // --- Helper Functions ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAllowedEmail() {
+      return isAuthenticated() && (
+        request.auth.token.email == "godiimwas@gmail.com" ||
+        request.auth.token.email == "gmaurice101@gmail.com" ||
+        request.auth.token.email == "ragnarkaladin@gmail.com" ||
+        // Add more allowed emails here to match App.tsx
+        request.auth.token.email.matches(".*@hospital-domain\\.com$") // Example domain check
+      );
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && isAllowedEmail() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isWardDoctor() {
+      return isAuthenticated() && isAllowedEmail() && getUserData().role == 'ward_doctor';
+    }
+
+    function isConsultant() {
+      return isAuthenticated() && isAllowedEmail() && getUserData().role == 'consultant';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (isAllowedEmail() && getUserData().role == 'admin') || 
+        (request.auth.token.email == "godiimwas@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    // --- Domain Validators ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && data.email.size() > 0 &&
+             data.role in ['ward_doctor', 'consultant', 'admin'];
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['patientId', 'patientName', 'patientPhone', 'diagnosis', 'clinicType', 'reviewDate', 'status', 'bookedBy', 'bookedAt']) &&
+             data.patientName is string && data.patientName.size() > 0 && data.patientName.size() < 100 &&
+             data.patientPhone is string && data.patientPhone.size() > 0 && data.patientPhone.size() < 20 &&
+             data.diagnosis is string && data.diagnosis.size() > 0 && data.diagnosis.size() < 5000 &&
+             data.clinicType in ['Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'] &&
+             data.status in ['pending', 'attended', 'no-show'];
+    }
+
+    // --- Rules ---
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role != 'admin' || isAdmin());
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAllowedEmail() && isValidBooking(request.resource.data) && request.resource.data.bookedBy == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        // Consultants can update status
+        (isConsultant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status in ['pending', 'attended', 'no-show']) ||
+        // Owners can update their bookings
+        (resource.data.bookedBy == request.auth.uid && isValidBooking(request.resource.data)) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /patients/{patientId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "PCEA Tumutumu Clinic Manager",
+  "description": "A clinic management system for PCEA Tumutumu Hospital to manage clinic bookings, discharge reviews, and consultant schedules.",
+  "requestFramePermissions": []
+}

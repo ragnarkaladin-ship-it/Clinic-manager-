@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the system (Doctor or Consultant)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["ward_doctor", "consultant", "admin"] },
+        "clinicType": { "type": "string", "description": "For consultants: Pediatrics, Neuro, ENT, Surgical, Orthopedic, Gynae/Obs, MOPC" }
+      },
+      "required": ["uid", "name", "email", "role"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Patient record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "diagnosis": { "type": "string" }
+      },
+      "required": ["id", "name", "diagnosis"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Clinic booking record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "patientPhone": { "type": "string" },
+        "diagnosis": { "type": "string" },
+        "clinicType": { "type": "string" },
+        "reviewDate": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["pending", "attended", "no-show"] },
+        "bookedBy": { "type": "string" },
+        "bookedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "patientId", "clinicType", "reviewDate", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/patients/{patientId}": {
+      "schema": "Patient",
+      "description": "Patient records"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Clinic bookings"
+    }
+  }
+}
