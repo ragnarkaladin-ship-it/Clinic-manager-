@@ -39,9 +39,12 @@
         "reviewDate": { "type": "string", "format": "date" },
         "status": { "type": "string", "enum": ["pending", "attended", "no-show"] },
         "bookedBy": { "type": "string" },
-        "bookedAt": { "type": "string", "format": "date-time" }
+        "bookedByName": { "type": "string" },
+        "bookedByEmail": { "type": "string", "format": "email" },
+        "bookedAt": { "type": "string", "format": "date-time" },
+        "comments": { "type": "string" }
       },
-      "required": ["id", "patientId", "clinicType", "reviewDate", "status"]
+      "required": ["id", "patientId", "clinicType", "reviewDate", "status", "bookedByEmail"]
     }
   },
   "firestore": {

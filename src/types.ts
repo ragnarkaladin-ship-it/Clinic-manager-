@@ -34,7 +34,10 @@ export interface Booking {
   reviewDate: string; // ISO date string
   status: 'pending' | 'attended' | 'no-show';
   bookedBy: string; // uid
+  bookedByName: string; // name of the person who booked
+  bookedByEmail: string; // email of the person who booked
   bookedAt: string; // ISO date-time string
+  comments?: string;
 }
 
 export const CLINIC_DAYS: Record<ClinicType, number[]> = {

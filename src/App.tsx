@@ -98,6 +98,18 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
+// --- Connection Test ---
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration. The client is offline.");
+    }
+  }
+}
+testConnection();
+
 // --- Components ---
 
 const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
@@ -272,12 +284,21 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
 };
 
 // --- Ward Doctor View ---
-const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isModal?: boolean }) => {
+const WardDoctorDashboard = ({ 
+  user, 
+  isModal = false, 
+  defaultClinic 
+}: { 
+  user: UserProfile, 
+  isModal?: boolean,
+  defaultClinic?: ClinicType
+}) => {
   const [patientName, setPatientName] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [clinicType, setClinicType] = useState<ClinicType | ''>('');
-  const [reviewDate, setReviewDate] = useState('');
+  const [clinicType, setClinicType] = useState<ClinicType | ''>(defaultClinic || '');
+  const [reviewDate, setReviewDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [comments, setComments] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -300,7 +321,10 @@ const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isM
         reviewDate,
         status: 'pending',
         bookedBy: user.uid,
+        bookedByName: user.name,
+        bookedByEmail: user.email,
         bookedAt: new Date().toISOString(),
+        comments,
       };
       
       await addDoc(collection(db, 'bookings'), bookingData);
@@ -311,6 +335,7 @@ const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isM
       setPhoneNumber('');
       setClinicType('');
       setReviewDate('');
+      setComments('');
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'bookings');
@@ -391,6 +416,16 @@ const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isM
               className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
             />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Comments / Special Instructions</label>
+          <textarea 
+            value={comments}
+            onChange={(e) => setComments(e.target.value)}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[80px]"
+            placeholder="Any extra notes for the consultant..."
+          />
         </div>
 
         <button 
@@ -644,7 +679,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     });
 
     return () => unsubscribe();
-  }, [user.clinicType]);
+  }, [activeClinicFilter]);
 
   const filteredBookings = useMemo(() => {
     return bookings.filter(b => {
@@ -716,9 +751,9 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     win.document.write(`<h2 style="color:#666;margin-top:0;">${format(parseISO(targetDate), 'PPPP')}</h2>`);
     win.document.write(`<p style="font-size:14px;color:#888;">Total Patients: ${bookingsToPrint.length}</p>`);
     
-    let tableHtml = '<table><thead><tr><th>Patient Name</th><th>Phone</th><th>Diagnosis</th><th>Status</th></tr></thead><tbody>';
+    let tableHtml = '<table><thead><tr><th>Patient Name</th><th>Phone</th><th>Diagnosis</th><th>Comments</th><th>Booked By (Email)</th><th>Status</th></tr></thead><tbody>';
     bookingsToPrint.forEach(b => {
-      tableHtml += `<tr><td><strong>${b.patientName}</strong></td><td>${b.patientPhone}</td><td>${b.diagnosis}</td><td>${b.status.toUpperCase()}</td></tr>`;
+      tableHtml += `<tr><td><strong>${b.patientName}</strong></td><td>${b.patientPhone}</td><td>${b.diagnosis}</td><td>${b.comments || '-'}</td><td>${b.bookedByEmail}</td><td>${b.status.toUpperCase()}</td></tr>`;
     });
     tableHtml += '</tbody></table>';
     
@@ -871,7 +906,8 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
               <thead>
                 <tr className="bg-slate-50 border-bottom border-slate-100">
                   <th className="p-6 text-sm font-bold text-slate-500 uppercase tracking-wider">Patient Details</th>
-                  <th className="p-6 text-sm font-bold text-slate-500 uppercase tracking-wider">Diagnosis</th>
+                  <th className="p-6 text-sm font-bold text-slate-500 uppercase tracking-wider">Diagnosis & Comments</th>
+                  <th className="p-6 text-sm font-bold text-slate-500 uppercase tracking-wider">Booked By</th>
                   <th className="p-6 text-sm font-bold text-slate-500 uppercase tracking-wider">Status</th>
                   <th className="p-6 text-sm font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                 </tr>
@@ -884,7 +920,14 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                       <div className="text-sm text-slate-500">{booking.patientPhone}</div>
                     </td>
                     <td className="p-6">
-                      <div className="text-sm text-slate-700 max-w-xs line-clamp-2">{booking.diagnosis}</div>
+                      <div className="text-sm text-slate-700 max-w-xs line-clamp-1 font-semibold">{booking.diagnosis}</div>
+                      {booking.comments && (
+                        <div className="text-xs text-slate-500 mt-1 italic line-clamp-1">"{booking.comments}"</div>
+                      )}
+                    </td>
+                    <td className="p-6">
+                      <div className="text-xs font-bold text-slate-600">{booking.bookedByEmail}</div>
+                      <div className="text-[10px] text-slate-400">{format(parseISO(booking.bookedAt), 'MMM d, HH:mm')}</div>
                     </td>
                     <td className="p-6">
                       <span className={cn(
@@ -988,7 +1031,16 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                       </span>
                     </div>
                     
-                    <p className="text-sm text-slate-600 mb-6 line-clamp-2 italic">"{booking.diagnosis}"</p>
+                    <p className="text-sm text-slate-600 mb-2 line-clamp-2 italic">"{booking.diagnosis}"</p>
+                    {booking.comments && (
+                      <p className="text-[10px] text-emerald-600 font-bold mb-4 bg-emerald-50 p-2 rounded-lg line-clamp-2">
+                        Note: {booking.comments}
+                      </p>
+                    )}
+                    <div className="text-[10px] text-slate-400 mb-4 flex justify-between">
+                      <span className="truncate flex-1 mr-2">By: {booking.bookedByEmail}</span>
+                      <span>{format(parseISO(booking.bookedAt), 'MMM d')}</span>
+                    </div>
                     
                     <div className="flex gap-2">
                       <button 
@@ -1036,7 +1088,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                 <XCircle className="w-6 h-6 text-slate-400" />
               </button>
             </div>
-            <WardDoctorDashboard user={user} isModal={true} />
+            <WardDoctorDashboard user={user} isModal={true} defaultClinic={activeClinicFilter} />
           </div>
         </div>
       )}
