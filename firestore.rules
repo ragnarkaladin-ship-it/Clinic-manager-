@@ -35,18 +35,8 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAllowedEmail() {
-      return isAuthenticated() && (
-        request.auth.token.email == "godiimwas@gmail.com" ||
-        request.auth.token.email == "gmaurice101@gmail.com" ||
-        request.auth.token.email == "ragnarkaladin@gmail.com" ||
-        // Add more allowed emails here to match App.tsx
-        request.auth.token.email.matches(".*@hospital-domain\\.com$") // Example domain check
-      );
-    }
-
     function isOwner(userId) {
-      return isAuthenticated() && isAllowedEmail() && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
     function getUserData() {
@@ -54,16 +44,16 @@ service cloud.firestore {
     }
 
     function isWardDoctor() {
-      return isAuthenticated() && isAllowedEmail() && getUserData().role == 'ward_doctor';
+      return isAuthenticated() && getUserData().role == 'ward_doctor';
     }
 
     function isConsultant() {
-      return isAuthenticated() && isAllowedEmail() && getUserData().role == 'consultant';
+      return isAuthenticated() && getUserData().role == 'consultant';
     }
 
     function isAdmin() {
       return isAuthenticated() && (
-        (isAllowedEmail() && getUserData().role == 'admin') || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'admin') || 
         (request.auth.token.email == "godiimwas@gmail.com" && request.auth.token.email_verified == true)
       );
     }
@@ -96,7 +86,7 @@ service cloud.firestore {
 
     match /bookings/{bookingId} {
       allow read: if isAuthenticated();
-      allow create: if isAllowedEmail() && isValidBooking(request.resource.data) && request.resource.data.bookedBy == request.auth.uid;
+      allow create: if isAuthenticated() && isValidBooking(request.resource.data) && request.resource.data.bookedBy == request.auth.uid;
       allow update: if isAuthenticated() && (
         // Consultants can update status
         (isConsultant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status in ['pending', 'attended', 'no-show']) ||

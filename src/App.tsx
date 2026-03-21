@@ -22,8 +22,7 @@ import {
   addDoc, 
   updateDoc,
   orderBy,
-  getDocFromServer,
-  writeBatch
+  getDocFromServer
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { 
@@ -49,7 +48,7 @@ import {
   ChevronLeft,
   Stethoscope,
   ClipboardList,
-  Database
+  AlertCircle
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
@@ -146,13 +145,6 @@ const LoadingScreen = () => (
   </div>
 );
 
-const ALLOWED_EMAILS = [
-  'godiimwas@gmail.com',
-  'gmaurice101@gmail.com',
-  'ragnarkaladin@gmail.com',
-  // Add more hospital staff emails here
-];
-
 const Login = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,17 +155,17 @@ const Login = () => {
     setError(null);
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      const email = result.user.email;
-      
-      if (email && !ALLOWED_EMAILS.includes(email)) {
-        await signOut(auth);
-        setError('Access Denied: Your email is not authorized to access this system.');
-      }
+      await signInWithPopup(auth, provider);
     } catch (error: any) {
       if (error.code !== 'auth/cancelled-popup-request') {
         console.error('Login error:', error);
-        setError('Failed to sign in. Please try again.');
+        if (error.code === 'auth/unauthorized-domain') {
+          setError('This domain is not authorized for sign-in. Please add it to the Firebase console.');
+        } else if (error.code === 'auth/popup-blocked') {
+          setError('Sign-in popup was blocked. Please allow popups for this site.');
+        } else {
+          setError(`Sign-in failed: ${error.message || 'Please try again.'}`);
+        }
       }
     } finally {
       setIsLoggingIn(false);
@@ -214,7 +206,7 @@ const Login = () => {
   );
 };
 
-const RoleSelection = ({ onSelect, isSeeding, seedData }: { onSelect: (role: Role, clinicType?: ClinicType) => void, isSeeding: boolean, seedData: () => Promise<void> }) => {
+const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: ClinicType) => void }) => {
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [selectedClinic, setSelectedClinic] = useState<ClinicType | ''>('');
 
@@ -274,21 +266,6 @@ const RoleSelection = ({ onSelect, isSeeding, seedData }: { onSelect: (role: Rol
         >
           Get Started
         </button>
-
-        <div className="mt-12 pt-8 border-t border-slate-100 text-center">
-          <button 
-            disabled={isSeeding}
-            onClick={seedData}
-            className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors uppercase tracking-widest flex items-center justify-center gap-2 mx-auto"
-          >
-            {isSeeding ? (
-              <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            ) : (
-              <Plus className="w-3 h-3" />
-            )}
-            {isSeeding ? 'Seeding Database...' : 'Seed POC Data (70 Patients)'}
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -327,6 +304,7 @@ const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isM
       };
       
       await addDoc(collection(db, 'bookings'), bookingData);
+      
       setSuccess(true);
       setPatientName('');
       setDiagnosis('');
@@ -374,7 +352,7 @@ const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isM
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
               className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-              placeholder="07..."
+              placeholder="Phone Number"
             />
           </div>
         </div>
@@ -428,7 +406,7 @@ const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isM
           ) : success ? (
             <>
               <CheckCircle2 className="w-5 h-5" />
-              Discharge Recorded Successfully
+              Discharge Recorded
             </>
           ) : (
             "Record Discharge & Book Clinic"
@@ -450,30 +428,62 @@ const WardDoctorDashboard = ({ user, isModal = false }: { user: UserProfile, isM
 };
 
 // --- Weekly Schedule Component ---
-const WeeklySchedule = ({ bookings, clinicType, onPrint }: { bookings: Booking[], clinicType: ClinicType, onPrint: (date: string) => void }) => {
+// --- Weekly Schedule Component ---
+const WeeklySchedule = ({ 
+  bookings, 
+  clinicType, 
+  onPrint,
+  onClinicChange,
+  clinicTypes
+}: { 
+  bookings: Booking[], 
+  clinicType: ClinicType, 
+  onPrint: (date: string) => void,
+  onClinicChange: (type: ClinicType) => void,
+  clinicTypes: ClinicType[]
+}) => {
   const next7Days = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => addDays(startOfDay(new Date()), i));
   }, []);
 
   const clinicDays = CLINIC_DAYS[clinicType];
-  const MAX_CAPACITY = 15;
+  const MAX_CAPACITY = 20;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-8">
-      <div className="flex items-center justify-between mb-2">
+    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900">Weekly Schedule</h2>
-          <p className="text-slate-500">Upcoming clinics and patient bookings for the next 7 days</p>
+          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Weekly Schedule</h2>
+          <p className="text-slate-500 mt-1">Upcoming clinics and patient bookings for the next 7 days</p>
         </div>
-        <div className="text-sm font-bold text-emerald-700 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
-          {clinicType} Clinic
+        
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="w-full sm:w-auto">
+            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Filter Clinic</label>
+            <select 
+              value={clinicType}
+              onChange={(e) => onClinicChange(e.target.value as ClinicType)}
+              className="w-full sm:w-64 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 transition-all cursor-pointer"
+            >
+              {clinicTypes.map(type => (
+                <option key={type} value={type}>{type} Clinic</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="hidden sm:block h-10 w-[1px] bg-slate-100"></div>
+          
+          <div className="flex items-center gap-3 bg-emerald-50 px-5 py-3 rounded-2xl border border-emerald-100">
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span className="text-sm font-bold text-emerald-700 uppercase tracking-wider">{clinicType}</span>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 gap-8">
         {next7Days.map((date) => {
           const dateStr = format(date, 'yyyy-MM-dd');
-          const dayBookings = bookings.filter(b => b.reviewDate === dateStr);
+          const dayBookings = bookings.filter(b => b.reviewDate === dateStr && b.clinicType === clinicType);
           const isClinicDay = clinicDays.includes(getDay(date));
           const availableSlots = isClinicDay ? Math.max(0, MAX_CAPACITY - dayBookings.length) : 0;
 
@@ -481,91 +491,122 @@ const WeeklySchedule = ({ bookings, clinicType, onPrint }: { bookings: Booking[]
             <div 
               key={dateStr}
               className={cn(
-                "bg-white rounded-3xl p-8 border transition-all shadow-sm",
-                isClinicDay ? "border-slate-100" : "border-slate-50 opacity-60"
+                "group relative bg-white rounded-[2.5rem] overflow-hidden border transition-all duration-300",
+                isClinicDay 
+                  ? "border-slate-100 shadow-lg hover:shadow-2xl hover:-translate-y-1" 
+                  : "border-slate-50 opacity-50 grayscale-[0.5]"
               )}
             >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="flex items-center gap-6">
-                  <div className={cn(
-                    "w-16 h-16 rounded-2xl flex flex-col items-center justify-center",
-                    isClinicDay ? "bg-emerald-600 text-white shadow-lg shadow-emerald-100" : "bg-slate-100 text-slate-400"
-                  )}>
-                    <span className="text-xs font-bold uppercase opacity-80">{format(date, 'EEE')}</span>
-                    <span className="text-2xl font-black">{format(date, 'd')}</span>
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold text-slate-900">{format(date, 'MMMM do, yyyy')}</div>
-                    <div className="text-sm text-slate-500 flex items-center gap-2 mt-1">
-                      {isClinicDay ? (
-                        <span className="flex items-center gap-1.5 text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg text-[10px] uppercase tracking-wider">
-                          <CheckCircle2 className="w-3 h-3" /> Clinic Day
+              {isClinicDay && (
+                <div className="absolute top-0 left-0 w-2 h-full bg-emerald-600"></div>
+              )}
+              
+              <div className="p-8">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+                  <div className="flex items-center gap-8">
+                    <div className={cn(
+                      "w-20 h-20 rounded-3xl flex flex-col items-center justify-center transition-transform group-hover:scale-105",
+                      isClinicDay ? "bg-emerald-600 text-white shadow-xl shadow-emerald-100" : "bg-slate-100 text-slate-400"
+                    )}>
+                      <span className="text-[10px] font-black uppercase tracking-widest opacity-70 mb-1">{format(date, 'EEE')}</span>
+                      <span className="text-3xl font-black leading-none">{format(date, 'd')}</span>
+                    </div>
+                    
+                    <div>
+                      <div className="text-2xl font-bold text-slate-900 tracking-tight">{format(date, 'MMMM do, yyyy')}</div>
+                      <div className="flex items-center gap-3 mt-2">
+                        {isClinicDay ? (
+                          <span className="flex items-center gap-2 text-emerald-600 font-black bg-emerald-50 px-3 py-1 rounded-full text-[10px] uppercase tracking-widest border border-emerald-100">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Active Clinic
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2 text-slate-400 font-black bg-slate-50 px-3 py-1 rounded-full text-[10px] uppercase tracking-widest border border-slate-100">
+                            <XCircle className="w-3.5 h-3.5" /> No Clinic Scheduled
+                          </span>
+                        )}
+                        <span className="text-xs font-bold text-slate-400">•</span>
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                          {dayBookings.length} Patients Booked
                         </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5 text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded-lg text-[10px] uppercase tracking-wider">
-                          <XCircle className="w-3 h-3" /> No Clinic
-                        </span>
-                      )}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-6">
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-slate-900">{dayBookings.length} Patients</div>
+                  <div className="flex flex-wrap items-center gap-8">
                     {isClinicDay && (
-                      <div className={cn(
-                        "text-xs font-bold uppercase tracking-widest mt-1",
-                        availableSlots > 5 ? "text-emerald-500" : availableSlots > 0 ? "text-amber-500" : "text-red-500"
-                      )}>
-                        {availableSlots} Slots Available
+                      <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <div className="text-right">
+                          <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Capacity</div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                              <div 
+                                className={cn(
+                                  "h-full transition-all duration-1000",
+                                  (dayBookings.length / MAX_CAPACITY) > 0.8 ? "bg-red-500" : "bg-emerald-500"
+                                )}
+                                style={{ width: `${Math.min(100, (dayBookings.length / MAX_CAPACITY) * 100)}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-sm font-black text-slate-700">{dayBookings.length}/{MAX_CAPACITY}</span>
+                          </div>
+                        </div>
                       </div>
                     )}
-                  </div>
-                  <div className="h-12 w-[1px] bg-slate-100 hidden md:block"></div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex -space-x-3">
-                      {dayBookings.slice(0, 5).map((b) => (
-                        <div key={b.id} className="w-10 h-10 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-xs font-bold text-slate-600 shadow-sm">
-                          {b.patientName[0]}
-                        </div>
-                      ))}
-                      {dayBookings.length > 5 && (
-                        <div className="w-10 h-10 rounded-full bg-slate-50 border-2 border-white flex items-center justify-center text-xs font-bold text-slate-400 shadow-sm">
-                          +{dayBookings.length - 5}
-                        </div>
+
+                    <div className="flex items-center gap-4">
+                      {dayBookings.length > 0 && (
+                        <button 
+                          onClick={() => onPrint(dateStr)}
+                          className="flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl active:scale-95 text-xs uppercase tracking-widest"
+                        >
+                          <Printer className="w-4 h-4" />
+                          Print List
+                        </button>
                       )}
                     </div>
-                    {dayBookings.length > 0 && (
-                      <button 
-                        onClick={() => onPrint(dateStr)}
-                        className="p-3 bg-slate-50 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all border border-slate-100"
-                        title="Print this day's list"
-                      >
-                        <Printer className="w-5 h-5" />
-                      </button>
-                    )}
                   </div>
                 </div>
-              </div>
 
-              {isClinicDay && dayBookings.length > 0 && (
-                <div className="mt-8 pt-8 border-t border-slate-50">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {dayBookings.map(b => (
-                      <div key={b.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-emerald-200 transition-colors group">
-                        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-sm font-bold text-emerald-600 border border-emerald-100 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                {isClinicDay && dayBookings.length > 0 ? (
+                  <div className="mt-10 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-4 duration-700">
+                    {dayBookings.map((b, idx) => (
+                      <div 
+                        key={b.id} 
+                        className="flex items-start gap-4 p-5 bg-slate-50 rounded-3xl border border-slate-100 hover:border-emerald-300 hover:bg-white transition-all duration-300 group/item"
+                        style={{ animationDelay: `${idx * 50}ms` }}
+                      >
+                        <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-lg font-black text-emerald-600 border border-emerald-100 group-hover/item:bg-emerald-600 group-hover/item:text-white transition-all shadow-sm">
                           {b.patientName[0]}
                         </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-bold text-slate-900 truncate">{b.patientName}</div>
-                          <div className="text-[10px] text-slate-500 truncate uppercase tracking-wider font-bold">{b.diagnosis}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-base font-bold text-slate-900 truncate">{b.patientName}</div>
+                            <span className={cn(
+                              "text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-tighter",
+                              b.status === 'attended' ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                            )}>
+                              {b.status}
+                            </span>
+                          </div>
+                          <div className="text-xs font-bold text-slate-500 mt-1 flex items-center gap-2">
+                            {b.patientPhone}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-widest line-clamp-1 bg-white/50 px-2 py-1 rounded-lg border border-slate-100">
+                            {b.diagnosis}
+                          </div>
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : isClinicDay ? (
+                  <div className="mt-10 p-12 border-2 border-dashed border-slate-100 rounded-[2rem] flex flex-col items-center justify-center text-center">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                      <Users className="w-8 h-8 text-slate-200" />
+                    </div>
+                    <div className="text-slate-400 font-bold">No patients booked for this clinic day yet.</div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           );
         })}
@@ -581,13 +622,17 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [viewMode, setViewMode] = useState<'daily' | 'timeline' | 'weekly'>('daily');
+  const [activeClinicFilter, setActiveClinicFilter] = useState<ClinicType>(user.clinicType!);
+
+  const clinicTypes: ClinicType[] = [
+    'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
+  ];
 
   useEffect(() => {
-    if (!user.clinicType) return;
-    
+    // We fetch all bookings for the selected clinic filter
     const q = query(
       collection(db, 'bookings'),
-      where('clinicType', '==', user.clinicType),
+      where('clinicType', '==', activeClinicFilter),
       orderBy('reviewDate', 'asc')
     );
 
@@ -667,7 +712,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     win.document.write('<html><head><title>Clinic List</title>');
     win.document.write('<style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;margin-top:20px;} th,td{border:1px solid #ddd;padding:12px;text-align:left;} th{background:#f4f4f4;font-weight:bold;text-transform:uppercase;font-size:12px;}</style>');
     win.document.write('</head><body>');
-    win.document.write(`<h1 style="margin-bottom:5px;">${user.clinicType} Clinic</h1>`);
+    win.document.write(`<h1 style="margin-bottom:5px;">${activeClinicFilter} Clinic</h1>`);
     win.document.write(`<h2 style="color:#666;margin-top:0;">${format(parseISO(targetDate), 'PPPP')}</h2>`);
     win.document.write(`<p style="font-size:14px;color:#888;">Total Patients: ${bookingsToPrint.length}</p>`);
     
@@ -690,7 +735,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-2 bg-white rounded-3xl p-8 shadow-xl border border-slate-100 flex flex-col justify-between">
           <div>
-            <h2 className="text-3xl font-bold text-slate-900 mb-1">{user.clinicType} Clinic</h2>
+            <h2 className="text-3xl font-bold text-slate-900 mb-1">{activeClinicFilter} Clinic</h2>
             <p className="text-slate-500 mb-6">Managing patients for {format(parseISO(selectedDate), 'PPPP')}</p>
           </div>
           <div className="flex items-center gap-4">
@@ -812,7 +857,13 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
 
       {/* Patient List / Timeline / Weekly */}
       {viewMode === 'weekly' ? (
-        <WeeklySchedule bookings={bookings} clinicType={user.clinicType!} onPrint={handlePrint} />
+        <WeeklySchedule 
+          bookings={bookings} 
+          clinicType={activeClinicFilter} 
+          onPrint={handlePrint}
+          onClinicChange={setActiveClinicFilter}
+          clinicTypes={clinicTypes}
+        />
       ) : viewMode === 'daily' ? (
         <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
           <div className="overflow-x-auto">
@@ -998,90 +1049,9 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isSeeding, setIsSeeding] = useState(false);
-
-  const seedData = async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      alert('You must be signed in to seed data.');
-      return;
-    }
-    
-    setIsSeeding(true);
-    const mockPatients = [
-      { name: 'John Doe', phone: '0712345678', diagnosis: 'Post-op review' },
-      { name: 'Jane Smith', phone: '0723456789', diagnosis: 'Chronic cough' },
-      { name: 'Alice Brown', phone: '0734567890', diagnosis: 'Fracture follow-up' },
-      { name: 'Bob Wilson', phone: '0745678901', diagnosis: 'Routine checkup' },
-      { name: 'Charlie Davis', phone: '0756789012', diagnosis: 'Abdominal pain' },
-      { name: 'Eve White', phone: '0767890123', diagnosis: 'Fever and headache' },
-      { name: 'Frank Miller', phone: '0778901234', diagnosis: 'Skin rash' },
-      { name: 'Grace Lee', phone: '0789012345', diagnosis: 'Ear infection' },
-      { name: 'Henry Ford', phone: '0790123456', diagnosis: 'Vision problems' },
-      { name: 'Ivy Green', phone: '0701234567', diagnosis: 'Back pain' },
-    ];
-
-    try {
-      console.log('Starting seeding process for user:', currentUser.uid);
-      const batch = writeBatch(db);
-      
-      const clinicTypes: ClinicType[] = [
-        'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
-      ];
-      
-      let totalAdded = 0;
-      for (const type of clinicTypes) {
-        const validDays = CLINIC_DAYS[type];
-        let count = 0;
-        let daysOffset = 0;
-        
-        while (count < 10) {
-          const date = addDays(new Date(), daysOffset);
-          if (validDays.includes(getDay(date))) {
-            const patient = mockPatients[count % mockPatients.length];
-            const bookingRef = doc(collection(db, 'bookings'));
-            const bookingData = {
-              patientId: `seed_${type}_${count}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              patientName: `${patient.name} (${type} ${count + 1})`,
-              patientPhone: patient.phone,
-              diagnosis: patient.diagnosis,
-              clinicType: type,
-              reviewDate: format(date, 'yyyy-MM-dd'),
-              status: 'pending',
-              bookedBy: currentUser.uid,
-              bookedAt: new Date().toISOString(),
-            };
-            batch.set(bookingRef, bookingData);
-            count++;
-            totalAdded++;
-          }
-          daysOffset++;
-          if (daysOffset > 100) break;
-        }
-      }
-      
-      console.log(`Committing batch of ${totalAdded} bookings...`);
-      await batch.commit();
-      console.log('Seeding successful!');
-      alert(`Seeding complete! ${totalAdded} patients added across all clinics.`);
-    } catch (error: any) {
-      console.error('Seeding error details:', error);
-      alert(`Seeding failed: ${error.message || 'Unknown error'}. Please check your connection and permissions.`);
-    } finally {
-      setIsSeeding(false);
-    }
-  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser && firebaseUser.email && !ALLOWED_EMAILS.includes(firebaseUser.email)) {
-        await signOut(auth);
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
-
       setUser(firebaseUser);
       if (firebaseUser) {
         try {
@@ -1124,7 +1094,7 @@ export default function App() {
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Login />;
-  if (!profile) return <RoleSelection onSelect={handleRoleSelect} isSeeding={isSeeding} seedData={seedData} />;
+  if (!profile) return <RoleSelection onSelect={handleRoleSelect} />;
 
   return (
     <ErrorBoundary>
@@ -1140,19 +1110,6 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-4 md:gap-6">
-              <button 
-                disabled={isSeeding}
-                onClick={seedData}
-                className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 rounded-xl border border-slate-200 hover:border-emerald-200 transition-all text-[10px] md:text-xs font-bold uppercase tracking-wider disabled:opacity-50"
-              >
-                {isSeeding ? (
-                  <div className="w-3 h-3 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Database className="w-3 h-3" />
-                )}
-                {isSeeding ? 'Seeding...' : 'Seed POC Data'}
-              </button>
-
               <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 font-bold text-sm">
                   {profile.name[0]}
