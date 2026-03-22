@@ -43,6 +43,7 @@ import {
   XCircle, 
   Printer, 
   Plus,
+  Download,
   Search,
   ChevronRight,
   ChevronLeft,
@@ -51,6 +52,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay } from 'date-fns';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -468,12 +471,14 @@ const WeeklySchedule = ({
   bookings, 
   clinicType, 
   onPrint,
+  onSavePdf,
   onClinicChange,
   clinicTypes
 }: { 
   bookings: Booking[], 
   clinicType: ClinicType, 
   onPrint: (date: string) => void,
+  onSavePdf: (date: string) => void,
   onClinicChange: (type: ClinicType) => void,
   clinicTypes: ClinicType[]
 }) => {
@@ -590,13 +595,23 @@ const WeeklySchedule = ({
 
                     <div className="flex items-center gap-4">
                       {dayBookings.length > 0 && (
-                        <button 
-                          onClick={() => onPrint(dateStr)}
-                          className="flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl active:scale-95 text-xs uppercase tracking-widest"
-                        >
-                          <Printer className="w-4 h-4" />
-                          Print List
-                        </button>
+                        <>
+                          <button 
+                            onClick={() => onSavePdf(dateStr)}
+                            className="flex items-center gap-2 px-5 py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition-all shadow-sm active:scale-95 text-xs uppercase tracking-widest"
+                            title="Save as PDF"
+                          >
+                            <Download className="w-4 h-4" />
+                            PDF
+                          </button>
+                          <button 
+                            onClick={() => onPrint(dateStr)}
+                            className="flex items-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl active:scale-95 text-xs uppercase tracking-widest"
+                          >
+                            <Printer className="w-4 h-4" />
+                            Print List
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -695,8 +710,28 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
   const groupedBookings = useMemo(() => {
     if (viewMode !== 'timeline') return [];
     
+    const today = format(new Date(), 'yyyy-MM-dd');
     const groups: { date: string, bookings: Booking[] }[] = [];
-    const sorted = [...filteredBookings].sort((a, b) => a.reviewDate.localeCompare(b.reviewDate));
+    
+    // Sort logic: Today first, then future (asc), then past (desc)
+    const sorted = [...filteredBookings].sort((a, b) => {
+      if (a.reviewDate === today && b.reviewDate === today) return 0;
+      if (a.reviewDate === today) return -1;
+      if (b.reviewDate === today) return 1;
+      
+      const isAFuture = a.reviewDate > today;
+      const isBFuture = b.reviewDate > today;
+      
+      if (isAFuture && !isBFuture) return -1;
+      if (!isAFuture && isBFuture) return 1;
+      
+      if (isAFuture && isBFuture) {
+        return a.reviewDate.localeCompare(b.reviewDate);
+      }
+      
+      // Both are past
+      return b.reviewDate.localeCompare(a.reviewDate);
+    });
     
     sorted.forEach(booking => {
       const existing = groups.find(g => g.date === booking.reviewDate);
@@ -736,32 +771,118 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     const targetDate = dateToPrint || selectedDate;
     const bookingsToPrint = bookings.filter(b => b.reviewDate === targetDate);
     
-    if (bookingsToPrint.length === 0) {
-      alert('No bookings to print for this date.');
-      return;
-    }
+    if (bookingsToPrint.length === 0) return;
 
-    const win = window.open('', '', 'height=700,width=900');
-    if (!win) return;
-    
-    win.document.write('<html><head><title>Clinic List</title>');
-    win.document.write('<style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;margin-top:20px;} th,td{border:1px solid #ddd;padding:12px;text-align:left;} th{background:#f4f4f4;font-weight:bold;text-transform:uppercase;font-size:12px;}</style>');
-    win.document.write('</head><body>');
-    win.document.write(`<h1 style="margin-bottom:5px;">${activeClinicFilter} Clinic</h1>`);
-    win.document.write(`<h2 style="color:#666;margin-top:0;">${format(parseISO(targetDate), 'PPPP')}</h2>`);
-    win.document.write(`<p style="font-size:14px;color:#888;">Total Patients: ${bookingsToPrint.length}</p>`);
-    
-    let tableHtml = '<table><thead><tr><th>Patient Name</th><th>Phone</th><th>Diagnosis</th><th>Comments</th><th>Booked By (Email)</th><th>Status</th></tr></thead><tbody>';
+    let html = `
+      <html>
+        <head>
+          <title>${activeClinicFilter} Clinic - ${targetDate}</title>
+          <style>
+            body { font-family: sans-serif; padding: 40px; }
+            h1 { margin-bottom: 5px; }
+            h2 { color: #666; margin-top: 0; }
+            p { font-size: 14px; color: #888; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { border: 1px solid #ddd; padding: 12px; text-align: left; background: #f4f4f4; font-weight: bold; text-transform: uppercase; font-size: 12px; }
+            td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+            footer { margin-top: 40px; border-top: 1px solid #eee; padding-top: 10px; font-size: 10px; color: #aaa; text-align: center; }
+            @media print {
+              footer { position: fixed; bottom: 0; width: 100%; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>${activeClinicFilter} Clinic</h1>
+          <h2>${format(parseISO(targetDate), 'PPPP')}</h2>
+          <p>Total Patients: ${bookingsToPrint.length}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Patient Name</th>
+                <th>Phone</th>
+                <th>Diagnosis</th>
+                <th>Comments</th>
+                <th>Booked By (Email)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
     bookingsToPrint.forEach(b => {
-      tableHtml += `<tr><td><strong>${b.patientName}</strong></td><td>${b.patientPhone}</td><td>${b.diagnosis}</td><td>${b.comments || '-'}</td><td>${b.bookedByEmail}</td><td>${b.status.toUpperCase()}</td></tr>`;
+      html += `
+        <tr>
+          <td><strong>${b.patientName}</strong></td>
+          <td>${b.patientPhone}</td>
+          <td>${b.diagnosis}</td>
+          <td>${b.comments || '-'}</td>
+          <td>${b.bookedByEmail}</td>
+          <td>${b.status.toUpperCase()}</td>
+        </tr>
+      `;
     });
-    tableHtml += '</tbody></table>';
+
+    html += `
+            </tbody>
+          </table>
+          <footer>Printed from PCEA Tumutumu Hospital Medical Records System</footer>
+          <script>
+            window.onload = () => {
+              window.print();
+              window.onafterprint = () => window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
+  };
+
+  const handleSavePdf = (dateToPrint?: string) => {
+    const targetDate = dateToPrint || selectedDate;
+    const bookingsToPrint = bookings.filter(b => b.reviewDate === targetDate);
     
-    win.document.write(tableHtml);
-    win.document.write('<footer style="margin-top:40px;border-top:1px solid #eee;padding-top:10px;font-size:10px;color:#aaa;text-align:center;">Printed from PCEA Tumutumu Hospital Medical Records System</footer>');
-    win.document.write('</body></html>');
-    win.document.close();
-    win.print();
+    if (bookingsToPrint.length === 0) return;
+
+    const doc = new jsPDF();
+    
+    // Add Hospital Header
+    doc.setFontSize(18);
+    doc.setTextColor(5, 150, 105); // emerald-600
+    doc.text('PCEA Tumutumu Hospital', 14, 20);
+    
+    doc.setFontSize(14);
+    doc.setTextColor(100);
+    doc.text(`${activeClinicFilter} Clinic List`, 14, 30);
+    
+    doc.setFontSize(10);
+    doc.text(`Date: ${format(parseISO(targetDate), 'PPPP')}`, 14, 38);
+    doc.text(`Total Patients: ${bookingsToPrint.length}`, 14, 44);
+
+    const tableData = bookingsToPrint.map(b => [
+      b.patientName,
+      b.patientPhone,
+      b.diagnosis,
+      b.comments || '-',
+      b.bookedByEmail,
+      b.status.toUpperCase()
+    ]);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [['Patient Name', 'Phone', 'Diagnosis', 'Comments', 'Booked By', 'Status']],
+      body: tableData,
+      headStyles: { fillColor: [5, 150, 105] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { top: 50 },
+    });
+
+    doc.save(`Clinic_List_${activeClinicFilter}_${targetDate}.pdf`);
   };
 
   return (
@@ -881,6 +1002,13 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
             Book Patient
           </button>
           <button 
+            onClick={() => handleSavePdf()}
+            className="flex-1 md:flex-none px-6 py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-all shadow-sm text-sm"
+          >
+            <Download className="w-4 h-4" />
+            Save PDF
+          </button>
+          <button 
             onClick={handlePrint}
             className="flex-1 md:flex-none px-6 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all shadow-sm text-sm"
           >
@@ -896,6 +1024,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
           bookings={bookings} 
           clinicType={activeClinicFilter} 
           onPrint={handlePrint}
+          onSavePdf={handleSavePdf}
           onClinicChange={setActiveClinicFilter}
           clinicTypes={clinicTypes}
         />
@@ -995,13 +1124,22 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                   <div className="px-4 py-1.5 bg-slate-100 rounded-full text-xs font-bold text-slate-500 uppercase tracking-widest">
                     {format(parseISO(group.date), 'EEEE, MMM do yyyy')}
                   </div>
-                  <button 
-                    onClick={() => handlePrint(group.date)}
-                    className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 rounded-lg transition-all shadow-sm"
-                    title="Print this day's list"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleSavePdf(group.date)}
+                      className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 rounded-lg transition-all shadow-sm"
+                      title="Save as PDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => handlePrint(group.date)}
+                      className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 hover:border-emerald-200 rounded-lg transition-all shadow-sm"
+                      title="Print this day's list"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <div className="h-px flex-1 bg-slate-200"></div>
               </div>
@@ -1152,7 +1290,7 @@ export default function App() {
     <ErrorBoundary>
       <div className="min-h-screen bg-slate-50">
         {/* Navigation */}
-        <nav className="bg-white border-b border-slate-100 sticky top-0 z-40">
+        <nav className="bg-white border-b border-slate-100 sticky top-0 z-40 print:hidden">
           <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
@@ -1185,7 +1323,7 @@ export default function App() {
         </nav>
 
         {/* Main Content */}
-        <main className="py-8">
+        <main className="py-8 print:hidden">
           {profile.role === 'ward_doctor' ? (
             <WardDoctorDashboard user={profile} />
           ) : (
@@ -1194,7 +1332,7 @@ export default function App() {
         </main>
 
         {/* Footer */}
-        <footer className="py-12 text-center text-slate-400 text-sm">
+        <footer className="py-12 text-center text-slate-400 text-sm print:hidden">
           <p>© {new Date().getFullYear()} PCEA Tumutumu Hospital • Medical Records System</p>
         </footer>
       </div>
