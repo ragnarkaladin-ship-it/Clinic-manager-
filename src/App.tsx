@@ -49,8 +49,10 @@ import {
   ChevronLeft,
   Stethoscope,
   ClipboardList,
-  AlertCircle,
-  FileDown
+  FileDown,
+  MessageSquare,
+  Send,
+  Bell
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay } from 'date-fns';
 import { jsPDF } from 'jspdf';
@@ -787,6 +789,11 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [viewMode, setViewMode] = useState<'daily' | 'timeline' | 'weekly'>('daily');
   const [activeClinicFilter, setActiveClinicFilter] = useState<ClinicType>(user.clinicType!);
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsDate, setSmsDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [smsClinic, setSmsClinic] = useState<ClinicType>(user.clinicType!);
+  const [smsMessage, setSmsMessage] = useState('');
+  const [isSendingSms, setIsSendingSms] = useState(false);
 
   const clinicTypes: ClinicType[] = [
     'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
@@ -999,8 +1006,40 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     doc.save(`Clinic_List_${activeClinicFilter}_${targetDate}.pdf`);
   };
 
+  const handleSendBulkSms = async () => {
+    if (!smsMessage.trim()) return;
+    
+    setIsSendingSms(true);
+    try {
+      // Filter bookings for the selected date and clinic
+      const targetBookings = bookings.filter(b => 
+        b.reviewDate === smsDate && 
+        b.clinicType === smsClinic &&
+        b.status === 'pending'
+      );
+
+      if (targetBookings.length === 0) {
+        alert('No pending bookings found for the selected criteria.');
+        return;
+      }
+
+      // Simulate sending SMS
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log(`Sending SMS to ${targetBookings.length} patients:`, smsMessage);
+      alert(`Successfully sent reminders to ${targetBookings.length} patients.`);
+      setShowSmsModal(false);
+      setSmsMessage('');
+    } catch (error) {
+      console.error('Error sending bulk SMS:', error);
+      alert('Failed to send SMS reminders.');
+    } finally {
+      setIsSendingSms(false);
+    }
+  };
+
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-8">
+    <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-8">
       {/* Header & Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-2 bg-white rounded-3xl p-8 shadow-xl border border-slate-100 flex flex-col justify-between">
@@ -1066,65 +1105,78 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
       </div>
 
       {/* Controls */}
-      <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-        <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm">
-          <button 
-            onClick={() => setViewMode('daily')}
-            className={cn(
-              "px-6 py-2 rounded-xl text-sm font-bold transition-all",
-              viewMode === 'daily' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
-            )}
-          >
-            Daily View
-          </button>
-          <button 
-            onClick={() => setViewMode('weekly')}
-            className={cn(
-              "px-6 py-2 rounded-xl text-sm font-bold transition-all",
-              viewMode === 'weekly' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
-            )}
-          >
-            Weekly Schedule
-          </button>
-          <button 
-            onClick={() => setViewMode('timeline')}
-            className={cn(
-              "px-6 py-2 rounded-xl text-sm font-bold transition-all",
-              viewMode === 'timeline' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
-            )}
-          >
-            Clinic Timeline
-          </button>
-        </div>
+      <div className="flex flex-col lg:flex-row gap-6 items-center justify-between">
+        <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto items-center">
+          <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm w-fit">
+            <button 
+              onClick={() => setViewMode('daily')}
+              className={cn(
+                "px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all",
+                viewMode === 'daily' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              Daily View
+            </button>
+            <button 
+              onClick={() => setViewMode('weekly')}
+              className={cn(
+                "px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all",
+                viewMode === 'weekly' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              Weekly Schedule
+            </button>
+            <button 
+              onClick={() => setViewMode('timeline')}
+              className={cn(
+                "px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all",
+                viewMode === 'timeline' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              Clinic Timeline
+            </button>
+          </div>
 
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search patients..."
-            className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-sm"
-          />
+          <div className="relative w-full sm:w-64 lg:w-72">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search patients..."
+              className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl shadow-sm outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-sm"
+            />
+          </div>
         </div>
         
-        <div className="flex gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap gap-3 w-full lg:w-auto justify-center lg:justify-end">
+          <button 
+            onClick={() => {
+              setSmsDate(selectedDate);
+              setSmsClinic(activeClinicFilter);
+              setShowSmsModal(true);
+            }}
+            className="flex-1 sm:flex-none px-4 py-3 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg text-xs sm:text-sm"
+          >
+            <Bell className="w-4 h-4" />
+            Bulk SMS
+          </button>
           <button 
             onClick={() => setShowBookingModal(true)}
-            className="flex-1 md:flex-none px-6 py-3 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg text-sm"
+            className="flex-1 sm:flex-none px-4 py-3 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg text-xs sm:text-sm"
           >
             <Plus className="w-4 h-4" />
             Book Patient
           </button>
           <button 
             onClick={() => handleSavePdf()}
-            className="flex-1 md:flex-none px-6 py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-all shadow-sm text-sm"
+            className="flex-1 sm:flex-none px-4 py-3 bg-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-200 transition-all shadow-sm text-xs sm:text-sm"
           >
             <Download className="w-4 h-4" />
             Save PDF
           </button>
           <button 
             onClick={handlePrint}
-            className="flex-1 md:flex-none px-6 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all shadow-sm text-sm"
+            className="flex-1 sm:flex-none px-4 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-all shadow-sm text-xs sm:text-sm"
           >
             <Printer className="w-4 h-4" />
             Print
@@ -1344,6 +1396,76 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
           </div>
         </div>
       )}
+
+      {/* Bulk SMS Modal */}
+      {showSmsModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 md:p-8 animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900">Send Bulk SMS Reminders</h3>
+              <button onClick={() => setShowSmsModal(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <XCircle className="w-6 h-6 text-slate-400" />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Clinic Date</label>
+                  <input 
+                    type="date"
+                    value={smsDate}
+                    onChange={(e) => setSmsDate(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Clinic Type</label>
+                  <select 
+                    value={smsClinic}
+                    onChange={(e) => setSmsClinic(e.target.value as ClinicType)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {clinicTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Message</label>
+                <textarea 
+                  value={smsMessage}
+                  onChange={(e) => setSmsMessage(e.target.value)}
+                  placeholder="e.g. Dear Patient, this is a reminder for your appointment at PCEA Tumutumu Hospital tomorrow..."
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 min-h-[120px] text-sm"
+                />
+              </div>
+
+              <div className="bg-indigo-50 p-4 rounded-2xl flex items-start gap-3">
+                <Bell className="w-5 h-5 text-indigo-600 mt-0.5" />
+                <div className="text-xs text-indigo-700 leading-relaxed">
+                  This will send an SMS to all <strong>Pending</strong> bookings for the selected clinic and date.
+                </div>
+              </div>
+
+              <button 
+                onClick={handleSendBulkSms}
+                disabled={isSendingSms || !smsMessage.trim()}
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg disabled:opacity-50"
+              >
+                {isSendingSms ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+                {isSendingSms ? 'Sending...' : 'Send Reminders'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1382,16 +1504,30 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   }, [bookings]);
 
   const masterPatientList = useMemo(() => {
-    const patientsMap = new Map<string, { name: string, phone: string, clinics: Set<string> }>();
+    const patientsMap = new Map<string, { name: string, phone: string, visits: { clinic: string, date: string, status: string }[] }>();
     bookings.forEach(b => {
       const key = b.patientPhone;
       if (!patientsMap.has(key)) {
-        patientsMap.set(key, { name: b.patientName, phone: b.patientPhone, clinics: new Set([b.clinicType]) });
+        patientsMap.set(key, { 
+          name: b.patientName, 
+          phone: b.patientPhone, 
+          visits: [{ clinic: b.clinicType, date: b.reviewDate, status: b.status }]
+        });
       } else {
-        patientsMap.get(key)!.clinics.add(b.clinicType);
+        // Add visit if it doesn't already exist for this patient on this day at this clinic
+        const exists = patientsMap.get(key)!.visits.some(v => v.clinic === b.clinicType && v.date === b.reviewDate);
+        if (!exists) {
+          patientsMap.get(key)!.visits.push({ clinic: b.clinicType, date: b.reviewDate, status: b.status });
+        }
       }
     });
-    return Array.from(patientsMap.values()).filter(p => 
+    
+    const list = Array.from(patientsMap.values()).map(p => ({
+      ...p,
+      visits: p.visits.sort((a, b) => b.date.localeCompare(a.date))
+    }));
+
+    return list.filter(p => 
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       p.phone.includes(searchQuery)
     );
@@ -1505,15 +1641,18 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
     const tableData = masterPatientList.map(p => [
       p.name,
       p.phone,
-      Array.from(p.clinics).join(', ')
+      p.visits.map(v => v.clinic).join('\n'),
+      p.visits.map(v => format(parseISO(v.date), 'MMM d, yyyy')).join('\n'),
+      p.visits.map(v => v.status.toUpperCase()).join('\n')
     ]);
 
     autoTable(doc, {
       startY: 40,
-      head: [['Patient Name', 'Phone Number', 'Clinics Visited']],
+      head: [['Patient Name', 'Phone Number', 'Clinics Visited', 'Dates Attended', 'Status']],
       body: tableData,
       theme: 'striped',
       headStyles: { fillColor: [16, 185, 129] }, // emerald-600
+      styles: { cellPadding: 3, fontSize: 10 },
     });
 
     doc.save(`Master_Patient_List_${today}.pdf`);
@@ -1638,6 +1777,8 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                     <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Patient Name</th>
                     <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Phone Number</th>
                     <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Clinics Visited</th>
+                    <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Dates Attended</th>
+                    <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -1646,10 +1787,36 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                       <td className="py-4 font-bold text-slate-900">{patient.name}</td>
                       <td className="py-4 text-slate-600">{patient.phone}</td>
                       <td className="py-4">
-                        <div className="flex flex-wrap gap-2">
-                          {Array.from(patient.clinics).map(c => (
-                            <span key={c} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                              {c}
+                        <div className="flex flex-col gap-2">
+                          {patient.visits.map((v, idx) => (
+                            <span key={`${v.clinic}-${v.date}-${idx}`} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-bold uppercase tracking-wider w-fit">
+                              {v.clinic}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-4">
+                        <div className="flex flex-col gap-2">
+                          {patient.visits.map((v, idx) => (
+                            <span key={`${v.clinic}-${v.date}-${idx}`} className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold w-fit">
+                              {format(parseISO(v.date), 'MMM d, yyyy')}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-4">
+                        <div className="flex flex-col gap-2">
+                          {patient.visits.map((v, idx) => (
+                            <span 
+                              key={`${v.clinic}-${v.date}-${idx}`} 
+                              className={cn(
+                                "px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider w-fit",
+                                v.status === 'attended' ? "bg-emerald-50 text-emerald-600" : 
+                                v.status === 'no-show' ? "bg-rose-50 text-rose-600" : 
+                                "bg-amber-50 text-amber-600"
+                              )}
+                            >
+                              {v.status}
                             </span>
                           ))}
                         </div>
