@@ -54,7 +54,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'admin') || 
-        (request.auth.token.email == "godiimwas@gmail.com" && request.auth.token.email_verified == true)
+        ((request.auth.token.email == "godiimwas@gmail.com" || request.auth.token.email == "tumutumuclinicmanager@gmail.com") && request.auth.token.email_verified == true)
       );
     }
 
@@ -64,7 +64,8 @@ service cloud.firestore {
              data.uid is string && data.uid.size() > 0 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.email is string && data.email.size() > 0 &&
-             data.role in ['ward_doctor', 'consultant', 'admin'];
+             data.role in ['ward_doctor', 'consultant', 'admin'] &&
+             (!('clinicType' in data) || data.clinicType in ['Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC']);
     }
 
     function isValidBooking(data) {

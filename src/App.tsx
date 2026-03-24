@@ -113,6 +113,22 @@ async function testConnection() {
 }
 testConnection();
 
+// --- SMS Infrastructure (Placeholder) ---
+const SMS_SERVICE = {
+  apiKey: '', // To be added later
+  senderId: '', // To be added later
+  sendReminder: async (phone: string, patientName: string, date: string, clinic: string) => {
+    console.log(`[SMS Infrastructure] Sending reminder to ${phone} for ${patientName} on ${date} at ${clinic} clinic.`);
+    // Implementation will go here
+    return true;
+  },
+  sendMarketing: async (phone: string, message: string) => {
+    console.log(`[SMS Infrastructure] Sending marketing message to ${phone}: ${message}`);
+    // Implementation will go here
+    return true;
+  }
+};
+
 // --- Components ---
 
 const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
@@ -163,8 +179,11 @@ const LoadingScreen = () => (
 const Login = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConsultantLogin, setShowConsultantLogin] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
-  const handleLogin = async () => {
+  const handleGoogleLogin = async () => {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
     setError(null);
@@ -172,20 +191,86 @@ const Login = () => {
     try {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
-      if (error.code !== 'auth/cancelled-popup-request') {
+      const ignoredErrors = ['auth/cancelled-popup-request', 'auth/popup-closed-by-user'];
+      if (!ignoredErrors.includes(error.code)) {
         console.error('Login error:', error);
-        if (error.code === 'auth/unauthorized-domain') {
-          setError('This domain is not authorized for sign-in. Please add it to the Firebase console.');
-        } else if (error.code === 'auth/popup-blocked') {
-          setError('Sign-in popup was blocked. Please allow popups for this site.');
-        } else {
-          setError(`Sign-in failed: ${error.message || 'Please try again.'}`);
-        }
+        setError(`Sign-in failed: ${error.message || 'Please try again.'}`);
       }
     } finally {
       setIsLoggingIn(false);
     }
   };
+
+  const handleConsultantLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === 'Tumutumu' && username.toLowerCase().includes('clinic')) {
+      handleGoogleLogin();
+    } else {
+      setError('Invalid clinic name or password. Use "Clinic Name" and "Tumutumu".');
+    }
+  };
+
+  if (showConsultantLogin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100">
+          <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Users className="w-10 h-10 text-emerald-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2 text-center">Consultant Login</h1>
+          <p className="text-slate-500 mb-8 text-center">Enter your clinic credentials to proceed</p>
+          
+          <form onSubmit={handleConsultantLogin} className="space-y-4">
+            {error && (
+              <div className="p-4 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100 mb-4 animate-in fade-in slide-in-from-top-2">
+                {error}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Clinic Name (Username)</label>
+              <input 
+                type="text" 
+                placeholder="e.g. MOPC Clinic"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+              <input 
+                type="password" 
+                placeholder="Enter password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                required
+              />
+            </div>
+
+            <button 
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+            >
+              {isLoggingIn ? 'Verifying...' : 'Login to Dashboard'}
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => setShowConsultantLogin(false)}
+              className="w-full py-2 text-slate-500 text-sm font-medium hover:text-slate-700 transition-colors"
+            >
+              Back to main login
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
@@ -204,7 +289,7 @@ const Login = () => {
           )}
           
           <button 
-            onClick={handleLogin}
+            onClick={handleGoogleLogin}
             disabled={isLoggingIn}
             className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl active:scale-[0.98] disabled:opacity-50"
           >
@@ -214,6 +299,19 @@ const Login = () => {
               <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6" alt="Google" />
             )}
             {isLoggingIn ? 'Connecting...' : 'Sign in with Google'}
+          </button>
+
+          <div className="relative py-4">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
+            <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Consultant Access</span></div>
+          </div>
+
+          <button 
+            onClick={() => setShowConsultantLogin(true)}
+            className="w-full py-4 bg-white border-2 border-slate-100 text-slate-700 rounded-2xl font-bold flex items-center justify-center gap-3 hover:border-emerald-200 hover:bg-emerald-50 transition-all active:scale-[0.98]"
+          >
+            <Users className="w-5 h-5 text-emerald-600" />
+            Clinic Login
           </button>
         </div>
       </div>
@@ -231,10 +329,10 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 overflow-y-auto">
-      <div className="max-w-xl w-full bg-white rounded-3xl shadow-2xl p-6 md:p-10 border border-slate-100 my-8">
+      <div className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl p-6 md:p-10 border border-slate-100 my-8">
         <h2 className="text-2xl font-bold text-slate-900 mb-6 text-center">Complete Your Profile</h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <button 
             onClick={() => setSelectedRole('ward_doctor')}
             className={cn(
@@ -244,7 +342,7 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
           >
             <ClipboardList className={cn("w-8 h-8 mb-3", selectedRole === 'ward_doctor' ? "text-emerald-600" : "text-slate-400")} />
             <div className="font-bold text-slate-900">Ward Doctor</div>
-            <div className="text-sm text-slate-500">Record discharge reviews and book clinics.</div>
+            <div className="text-sm text-slate-500">Record reviews and book clinics.</div>
           </button>
           
           <button 
@@ -256,7 +354,19 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
           >
             <Users className={cn("w-8 h-8 mb-3", selectedRole === 'consultant' ? "text-emerald-600" : "text-slate-400")} />
             <div className="font-bold text-slate-900">Consultant</div>
-            <div className="text-sm text-slate-500">Manage your clinics and track patient attendance.</div>
+            <div className="text-sm text-slate-500">Manage your clinics and track attendance.</div>
+          </button>
+
+          <button 
+            onClick={() => setSelectedRole('admin')}
+            className={cn(
+              "p-6 rounded-2xl border-2 transition-all text-left group",
+              selectedRole === 'admin' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
+            )}
+          >
+            <LayoutDashboard className={cn("w-8 h-8 mb-3", selectedRole === 'admin' ? "text-emerald-600" : "text-slate-400")} />
+            <div className="font-bold text-slate-900">Admin</div>
+            <div className="text-sm text-slate-500">Full access to all clinics and patient data.</div>
           </button>
         </div>
 
@@ -331,6 +441,9 @@ const WardDoctorDashboard = ({
       };
       
       await addDoc(collection(db, 'bookings'), bookingData);
+      
+      // Send SMS reminder
+      await SMS_SERVICE.sendReminder(phoneNumber, patientName, reviewDate, clinicType);
       
       setSuccess(true);
       setPatientName('');
@@ -1234,6 +1347,260 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
   );
 };
 
+// --- Admin View ---
+const AdminDashboard = ({ user }: { user: UserProfile }) => {
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'master_list'>('overview');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [marketingMessage, setMarketingMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
+  const clinicTypes: ClinicType[] = [
+    'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
+  ];
+
+  useEffect(() => {
+    const q = query(collection(db, 'bookings'), orderBy('reviewDate', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
+      setBookings(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'bookings');
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const clinicStats = useMemo(() => {
+    return clinicTypes.map(clinic => {
+      const clinicBookings = bookings.filter(b => b.clinicType === clinic);
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const todayCount = clinicBookings.filter(b => b.reviewDate === today).length;
+      const totalCount = clinicBookings.length;
+      return { clinic, todayCount, totalCount };
+    });
+  }, [bookings]);
+
+  const masterPatientList = useMemo(() => {
+    const patientsMap = new Map<string, { name: string, phone: string, clinics: Set<string> }>();
+    bookings.forEach(b => {
+      const key = b.patientPhone;
+      if (!patientsMap.has(key)) {
+        patientsMap.set(key, { name: b.patientName, phone: b.patientPhone, clinics: new Set([b.clinicType]) });
+      } else {
+        patientsMap.get(key)!.clinics.add(b.clinicType);
+      }
+    });
+    return Array.from(patientsMap.values()).filter(p => 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      p.phone.includes(searchQuery)
+    );
+  }, [bookings, searchQuery]);
+
+  const handlePrintClinic = (clinic: ClinicType) => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const bookingsToPrint = bookings.filter(b => b.clinicType === clinic && b.reviewDate === today);
+    
+    if (bookingsToPrint.length === 0) {
+      alert(`No bookings for ${clinic} clinic today.`);
+      return;
+    }
+
+    let html = `
+      <html>
+        <head>
+          <title>${clinic} Clinic - ${today}</title>
+          <style>
+            body { font-family: sans-serif; padding: 40px; }
+            h1 { margin-bottom: 5px; }
+            h2 { color: #666; margin-top: 0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th { border: 1px solid #ddd; padding: 12px; text-align: left; background: #f4f4f4; }
+            td { border: 1px solid #ddd; padding: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>${clinic} Clinic</h1>
+          <h2>${format(new Date(), 'PPPP')}</h2>
+          <table>
+            <thead>
+              <tr><th>Patient Name</th><th>Phone</th><th>Diagnosis</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              ${bookingsToPrint.map(b => `
+                <tr>
+                  <td>${b.patientName}</td>
+                  <td>${b.patientPhone}</td>
+                  <td>${b.diagnosis}</td>
+                  <td>${b.status.toUpperCase()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(html);
+      printWindow.document.close();
+    }
+  };
+
+  const handleSendMarketing = async () => {
+    if (!marketingMessage.trim()) return;
+    setIsSending(true);
+    try {
+      for (const patient of masterPatientList) {
+        await SMS_SERVICE.sendMarketing(patient.phone, marketingMessage);
+      }
+      alert('Marketing messages sent to all patients in the current list.');
+      setMarketingMessage('');
+    } catch (error) {
+      console.error('Marketing error:', error);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex gap-4 mb-8 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 w-fit">
+        <button 
+          onClick={() => setActiveTab('overview')}
+          className={cn(
+            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+            activeTab === 'overview' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+          )}
+        >
+          <LayoutDashboard className="w-4 h-4" />
+          Clinics Overview
+        </button>
+        <button 
+          onClick={() => setActiveTab('master_list')}
+          className={cn(
+            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+            activeTab === 'master_list' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+          )}
+        >
+          <Users className="w-4 h-4" />
+          Master Patient List
+        </button>
+      </div>
+
+      {activeTab === 'overview' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {clinicStats.map(stat => (
+            <div key={stat.clinic} className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-all">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">{stat.clinic} Clinic</h3>
+                  <p className="text-sm text-slate-500">Daily Statistics</p>
+                </div>
+                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center">
+                  <Stethoscope className="w-5 h-5 text-slate-400" />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-emerald-50 p-4 rounded-2xl">
+                  <div className="text-2xl font-bold text-emerald-600">{stat.todayCount}</div>
+                  <div className="text-xs font-bold text-emerald-600/70 uppercase tracking-wider">Today</div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-2xl">
+                  <div className="text-2xl font-bold text-slate-600">{stat.totalCount}</div>
+                  <div className="text-xs font-bold text-slate-600/70 uppercase tracking-wider">Total</div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => handlePrintClinic(stat.clinic)}
+                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"
+              >
+                <Printer className="w-4 h-4" />
+                Print Today's List
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900">Master Patient Database</h3>
+              <div className="relative w-full md:w-96">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input 
+                  type="text"
+                  placeholder="Search by name or phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="text-left border-b border-slate-100">
+                    <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Patient Name</th>
+                    <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Phone Number</th>
+                    <th className="pb-4 font-bold text-slate-400 uppercase tracking-wider text-xs">Clinics Visited</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {masterPatientList.map(patient => (
+                    <tr key={patient.phone} className="group hover:bg-slate-50 transition-colors">
+                      <td className="py-4 font-bold text-slate-900">{patient.name}</td>
+                      <td className="py-4 text-slate-600">{patient.phone}</td>
+                      <td className="py-4">
+                        <div className="flex flex-wrap gap-2">
+                          {Array.from(patient.clinics).map(c => (
+                            <span key={c} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-bold uppercase tracking-wider">
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Marketing Campaign</h3>
+            <p className="text-sm text-slate-500 mb-6">Send a bulk SMS message to all patients in the filtered list above.</p>
+            
+            <div className="space-y-4">
+              <textarea 
+                placeholder="Type your marketing message here..."
+                value={marketingMessage}
+                onChange={(e) => setMarketingMessage(e.target.value)}
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[120px]"
+              />
+              <button 
+                onClick={handleSendMarketing}
+                disabled={isSending || !marketingMessage.trim() || masterPatientList.length === 0}
+                className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
+              >
+                {isSending ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Plus className="w-5 h-5" />
+                )}
+                {isSending ? 'Sending Messages...' : `Send to ${masterPatientList.length} Patients`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- Main App ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -1324,11 +1691,9 @@ export default function App() {
 
         {/* Main Content */}
         <main className="py-8 print:hidden">
-          {profile.role === 'ward_doctor' ? (
-            <WardDoctorDashboard user={profile} />
-          ) : (
-            <ConsultantDashboard user={profile} />
-          )}
+          {profile.role === 'ward_doctor' && <WardDoctorDashboard user={profile} />}
+          {profile.role === 'consultant' && <ConsultantDashboard user={profile} />}
+          {profile.role === 'admin' && <AdminDashboard user={profile} />}
         </main>
 
         {/* Footer */}
