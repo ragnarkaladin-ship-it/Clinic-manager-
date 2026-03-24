@@ -49,7 +49,8 @@ import {
   ChevronLeft,
   Stethoscope,
   ClipboardList,
-  AlertCircle
+  AlertCircle,
+  FileDown
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay } from 'date-fns';
 import { jsPDF } from 'jspdf';
@@ -1447,6 +1448,77 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
     }
   };
 
+  const handleSavePDF = (clinic: ClinicType) => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const bookingsToPrint = bookings.filter(b => b.clinicType === clinic && b.reviewDate === today);
+    
+    if (bookingsToPrint.length === 0) {
+      alert(`No bookings for ${clinic} clinic today.`);
+      return;
+    }
+
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(20);
+    doc.text(`${clinic} Clinic`, 14, 22);
+    doc.setFontSize(12);
+    doc.setTextColor(100);
+    doc.text(format(new Date(), 'PPPP'), 14, 30);
+    
+    // Table
+    const tableData = bookingsToPrint.map(b => [
+      b.patientName,
+      b.patientPhone,
+      b.diagnosis,
+      b.status.toUpperCase()
+    ]);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Patient Name', 'Phone', 'Diagnosis', 'Status']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [16, 185, 129] }, // emerald-600
+    });
+
+    doc.save(`${clinic}_Clinic_${today}.pdf`);
+  };
+
+  const handleSaveMasterListPDF = () => {
+    if (masterPatientList.length === 0) {
+      alert('No patients in the list to export.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    const today = format(new Date(), 'yyyy-MM-dd');
+    
+    // Header
+    doc.setFontSize(20);
+    doc.text('Master Patient Database', 14, 22);
+    doc.setFontSize(12);
+    doc.setTextColor(100);
+    doc.text(`Exported on ${format(new Date(), 'PPPP')}`, 14, 30);
+    
+    // Table
+    const tableData = masterPatientList.map(p => [
+      p.name,
+      p.phone,
+      Array.from(p.clinics).join(', ')
+    ]);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Patient Name', 'Phone Number', 'Clinics Visited']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [16, 185, 129] }, // emerald-600
+    });
+
+    doc.save(`Master_Patient_List_${today}.pdf`);
+  };
+
   const handleSendMarketing = async () => {
     if (!marketingMessage.trim()) return;
     setIsSending(true);
@@ -1513,13 +1585,22 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                 </div>
               </div>
 
-              <button 
-                onClick={() => handlePrintClinic(stat.clinic)}
-                className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"
-              >
-                <Printer className="w-4 h-4" />
-                Print Today's List
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handlePrintClinic(stat.clinic)}
+                  className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print
+                </button>
+                <button 
+                  onClick={() => handleSavePDF(stat.clinic)}
+                  className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all"
+                >
+                  <FileDown className="w-4 h-4" />
+                  Save PDF
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1527,7 +1608,17 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
         <div className="space-y-6">
           <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
             <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center mb-6">
-              <h3 className="text-xl font-bold text-slate-900">Master Patient Database</h3>
+              <div className="flex items-center gap-4">
+                <h3 className="text-xl font-bold text-slate-900">Master Patient Database</h3>
+                <button 
+                  onClick={handleSaveMasterListPDF}
+                  className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all flex items-center gap-2 text-xs font-bold"
+                  title="Export to PDF"
+                >
+                  <FileDown className="w-4 h-4" />
+                  Export PDF
+                </button>
+              </div>
               <div className="relative w-full md:w-96">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input 
