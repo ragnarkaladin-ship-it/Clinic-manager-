@@ -25,6 +25,7 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { CEODashboard } from './components/CEODashboard';
 import { 
   Role, 
   UserProfile, 
@@ -52,7 +53,8 @@ import {
   FileDown,
   MessageSquare,
   Send,
-  Bell
+  Bell,
+  TrendingUp
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay } from 'date-fns';
 import { jsPDF } from 'jspdf';
@@ -282,7 +284,7 @@ const Login = () => {
           <Stethoscope className="w-10 h-10 text-emerald-600" />
         </div>
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Tumutumu Hospital</h1>
-        <p className="text-slate-500 mb-8">Clinic Management System for Consultants & Ward Doctors</p>
+        <p className="text-slate-500 mb-8">Clinic Management System for Consultants & Doctors</p>
         
         <div className="space-y-4">
           {error && (
@@ -337,14 +339,14 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <button 
-            onClick={() => setSelectedRole('ward_doctor')}
+            onClick={() => setSelectedRole('doctor')}
             className={cn(
               "p-6 rounded-2xl border-2 transition-all text-left group",
-              selectedRole === 'ward_doctor' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
+              selectedRole === 'doctor' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
             )}
           >
-            <ClipboardList className={cn("w-8 h-8 mb-3", selectedRole === 'ward_doctor' ? "text-emerald-600" : "text-slate-400")} />
-            <div className="font-bold text-slate-900">Ward Doctor</div>
+            <ClipboardList className={cn("w-8 h-8 mb-3", selectedRole === 'doctor' ? "text-emerald-600" : "text-slate-400")} />
+            <div className="font-bold text-slate-900">Doctor</div>
             <div className="text-sm text-slate-500">Record reviews and book clinics.</div>
           </button>
           
@@ -370,6 +372,18 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
             <LayoutDashboard className={cn("w-8 h-8 mb-3", selectedRole === 'admin' ? "text-emerald-600" : "text-slate-400")} />
             <div className="font-bold text-slate-900">Admin</div>
             <div className="text-sm text-slate-500">Full access to all clinics and patient data.</div>
+          </button>
+
+          <button 
+            onClick={() => setSelectedRole('ceo')}
+            className={cn(
+              "p-6 rounded-2xl border-2 transition-all text-left group",
+              selectedRole === 'ceo' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
+            )}
+          >
+            <TrendingUp className={cn("w-8 h-8 mb-3", selectedRole === 'ceo' ? "text-emerald-600" : "text-slate-400")} />
+            <div className="font-bold text-slate-900">CEO</div>
+            <div className="text-sm text-slate-500">Financial reports and operational overview.</div>
           </button>
         </div>
 
@@ -399,8 +413,8 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
   );
 };
 
-// --- Ward Doctor View ---
-const WardDoctorDashboard = ({ 
+// --- Doctor View ---
+const DoctorDashboard = ({ 
   user, 
   isModal = false, 
   defaultClinic 
@@ -1392,7 +1406,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                 <XCircle className="w-6 h-6 text-slate-400" />
               </button>
             </div>
-            <WardDoctorDashboard user={user} isModal={true} defaultClinic={activeClinicFilter} />
+            <DoctorDashboard user={user} isModal={true} defaultClinic={activeClinicFilter} />
           </div>
         </div>
       )}
@@ -1872,6 +1886,24 @@ export default function App() {
         try {
           const docRef = doc(db, 'users', firebaseUser.uid);
           const docSnap = await getDoc(docRef);
+          
+          // Force CEO role for specific email
+          if (firebaseUser.email === 'ragnarkaladin@gmail.com') {
+            const currentData = docSnap.exists() ? docSnap.data() as UserProfile : null;
+            if (!currentData || currentData.role !== 'ceo') {
+              const ceoProfile: UserProfile = {
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || 'CEO',
+                email: firebaseUser.email,
+                role: 'ceo'
+              };
+              await setDoc(docRef, ceoProfile);
+              setProfile(ceoProfile);
+              setLoading(false);
+              return;
+            }
+          }
+
           if (docSnap.exists()) {
             setProfile(docSnap.data() as UserProfile);
           }
@@ -1949,9 +1981,10 @@ export default function App() {
 
         {/* Main Content */}
         <main className="py-8 print:hidden">
-          {profile.role === 'ward_doctor' && <WardDoctorDashboard user={profile} />}
+          {profile.role === 'doctor' && <DoctorDashboard user={profile} />}
           {profile.role === 'consultant' && <ConsultantDashboard user={profile} />}
           {profile.role === 'admin' && <AdminDashboard user={profile} />}
+          {profile.role === 'ceo' && <CEODashboard user={profile} />}
         </main>
 
         {/* Footer */}

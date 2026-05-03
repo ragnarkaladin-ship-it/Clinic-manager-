@@ -1,4 +1,4 @@
-export type Role = 'ward_doctor' | 'consultant' | 'admin';
+export type Role = 'doctor' | 'consultant' | 'admin' | 'ceo';
 
 export type ClinicType = 
   | 'Pediatrics' 

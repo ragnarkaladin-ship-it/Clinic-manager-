@@ -12,7 +12,7 @@ service cloud.firestore {
     //   - uid: string (required)
     //   - name: string (required)
     //   - email: string (required, email format)
-    //   - role: string (required, 'ward_doctor', 'consultant', 'admin')
+    //   - role: string (required, 'doctor', 'consultant', 'admin')
     //   - clinicType: string (optional, for consultants)
     //
     // Collection: bookings
@@ -43,18 +43,22 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isWardDoctor() {
-      return isAuthenticated() && getUserData().role == 'ward_doctor';
+    function isDoctor() {
+      return isAuthenticated() && getUserData().role == 'doctor';
     }
 
     function isConsultant() {
       return isAuthenticated() && getUserData().role == 'consultant';
     }
 
+    function isCEO() {
+      return isAuthenticated() && getUserData().role == 'ceo';
+    }
+
     function isAdmin() {
       return isAuthenticated() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'admin') || 
-        ((request.auth.token.email == "godiimwas@gmail.com" || request.auth.token.email == "tumutumuclinicmanager@gmail.com") && request.auth.token.email_verified == true)
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserData().role == 'admin' || getUserData().role == 'ceo')) || 
+        ((request.auth.token.email == "godiimwas@gmail.com" || request.auth.token.email == "tumutumuclinicmanager@gmail.com" || request.auth.token.email == "ragnarkaladin@gmail.com") && request.auth.token.email_verified == true)
       );
     }
 
@@ -64,7 +68,7 @@ service cloud.firestore {
              data.uid is string && data.uid.size() > 0 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.email is string && data.email.size() > 0 &&
-             data.role in ['ward_doctor', 'consultant', 'admin'] &&
+             data.role in ['doctor', 'consultant', 'admin', 'ceo'] &&
              (!('clinicType' in data) || data.clinicType in ['Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC']);
     }
 

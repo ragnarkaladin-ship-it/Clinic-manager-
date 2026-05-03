@@ -8,7 +8,7 @@
         "uid": { "type": "string" },
         "name": { "type": "string" },
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["ward_doctor", "consultant", "admin"] },
+        "role": { "type": "string", "enum": ["doctor", "consultant", "admin", "ceo"] },
         "clinicType": { "type": "string", "description": "For consultants: Pediatrics, Neuro, ENT, Surgical, Orthopedic, Gynae/Obs, MOPC" }
       },
       "required": ["uid", "name", "email", "role"]
