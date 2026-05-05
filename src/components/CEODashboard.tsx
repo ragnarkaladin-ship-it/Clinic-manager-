@@ -207,7 +207,7 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
     const rangeText = format(dateRangeRange.start, 'PPP') + ' - ' + format(dateRangeRange.end, 'PPP');
     
     doc.setFontSize(20);
-    doc.text('PCEA Tumutumu Hospital - Financial Report', 14, 22);
+    doc.text('MedConnect Tumutumu - Financial Report', 14, 22);
     doc.setFontSize(10);
     doc.text(`Generated on: ${format(new Date(), 'PPP p')}`, 14, 30);
     doc.text(`Report Period: ${rangeText}`, 14, 35);

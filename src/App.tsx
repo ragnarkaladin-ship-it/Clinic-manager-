@@ -177,7 +177,7 @@ const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
 const LoadingScreen = () => (
   <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
     <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-    <p className="text-slate-600 font-medium">Loading PCEA Tumutumu Clinic Manager...</p>
+    <p className="text-slate-600 font-medium">Loading MedConnect Tumutumu...</p>
   </div>
 );
 
@@ -283,7 +283,7 @@ const Login = () => {
         <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
           <Stethoscope className="w-10 h-10 text-emerald-600" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Tumutumu Hospital</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-2">MedConnect Tumutumu</h1>
         <p className="text-slate-500 mb-8">Clinic Management System for Consultants & Doctors</p>
         
         <div className="space-y-4">
@@ -960,7 +960,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     html += `
             </tbody>
           </table>
-          <footer>Printed from PCEA Tumutumu Hospital Medical Records System</footer>
+          <footer>Printed from MedConnect Tumutumu Medical Records System</footer>
           <script>
             window.onload = () => {
               window.print();
@@ -989,7 +989,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     // Add Hospital Header
     doc.setFontSize(18);
     doc.setTextColor(5, 150, 105); // emerald-600
-    doc.text('PCEA Tumutumu Hospital', 14, 20);
+    doc.text('MedConnect Tumutumu', 14, 20);
     
     doc.setFontSize(14);
     doc.setTextColor(100);
@@ -1452,7 +1452,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                 <textarea 
                   value={smsMessage}
                   onChange={(e) => setSmsMessage(e.target.value)}
-                  placeholder="e.g. Dear Patient, this is a reminder for your appointment at PCEA Tumutumu Hospital tomorrow..."
+                  placeholder="e.g. Dear Patient, this is a reminder for your appointment at MedConnect Tumutumu tomorrow..."
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 min-h-[120px] text-sm"
                 />
               </div>
@@ -1953,7 +1953,7 @@ export default function App() {
               <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
                 <Stethoscope className="w-6 h-6 text-white" />
               </div>
-              <span className="font-bold text-slate-900 hidden md:block">PCEA Tumutumu Clinic</span>
+              <span className="font-bold text-slate-900 hidden md:block">MedConnect Tumutumu</span>
             </div>
 
             <div className="flex items-center gap-4 md:gap-6">
@@ -1989,7 +1989,7 @@ export default function App() {
 
         {/* Footer */}
         <footer className="py-12 text-center text-slate-400 text-sm print:hidden">
-          <p>© {new Date().getFullYear()} PCEA Tumutumu Hospital • Medical Records System</p>
+          <p>© {new Date().getFullYear()} MedConnect Tumutumu • Medical Records System</p>
         </footer>
       </div>
     </ErrorBoundary>
