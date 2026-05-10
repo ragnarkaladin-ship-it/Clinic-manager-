@@ -45,6 +45,33 @@
         "comments": { "type": "string" }
       },
       "required": ["id", "patientId", "clinicType", "reviewDate", "status", "bookedByEmail"]
+    },
+    "WhitelistedEmail": {
+      "title": "Whitelisted Email",
+      "description": "An email address pre-approved for a specific role",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["doctor", "consultant", "admin", "ceo"] },
+        "clinicType": { "type": "string", "description": "For consultants: Pediatrics, Neuro, ENT, Surgical, Orthopedic, Gynae/Obs, MOPC" },
+        "addedAt": { "type": "string", "format": "date-time" },
+        "addedBy": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    },
+    "MarketingMessage": {
+      "title": "Marketing Message",
+      "description": "A broadcast message sent to patients for marketing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "content": { "type": "string" },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "sentBy": { "type": "string" },
+        "sentByName": { "type": "string" },
+        "targetClinic": { "type": "string" }
+      },
+      "required": ["content", "sentAt", "sentBy"]
     }
   },
   "firestore": {
@@ -59,6 +86,14 @@
     "/bookings/{bookingId}": {
       "schema": "Booking",
       "description": "Clinic bookings"
+    },
+    "/whitelisted_emails/{email}": {
+      "schema": "WhitelistedEmail",
+      "description": "Emails allowed to register/login"
+    },
+    "/marketing_messages/{messageId}": {
+      "schema": "MarketingMessage",
+      "description": "History of marketing messages sent"
     }
   }
 }

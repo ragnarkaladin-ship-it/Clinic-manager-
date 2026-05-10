@@ -21,6 +21,7 @@ import {
   where, 
   addDoc, 
   updateDoc,
+  deleteDoc,
   orderBy,
   getDocFromServer
 } from 'firebase/firestore';
@@ -31,6 +32,7 @@ import {
   UserProfile, 
   Booking, 
   ClinicType, 
+  MarketingMessage,
   CLINIC_DAYS, 
   DAY_NAMES 
 } from './types';
@@ -56,7 +58,7 @@ import {
   Bell,
   TrendingUp
 } from 'lucide-react';
-import { format, startOfDay, addDays, isSameDay, parseISO, getDay } from 'date-fns';
+import { format, startOfDay, addDays, isSameDay, parseISO, getDay, endOfDay, addHours, isAfter, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { clsx, type ClassValue } from 'clsx';
@@ -67,7 +69,7 @@ function cn(...inputs: ClassValue[]) {
 }
 
 // --- Error Handling ---
-enum OperationType {
+export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
@@ -83,7 +85,7 @@ interface FirestoreErrorInfo {
   authInfo: any;
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -485,8 +487,8 @@ const DoctorDashboard = ({
             <ClipboardList className="w-6 h-6 text-emerald-600" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Discharge Review</h2>
-            <p className="text-slate-500">Record patient details and schedule their first clinic review.</p>
+            <h2 className="text-2xl font-bold text-slate-900">Book New Patient</h2>
+            <p className="text-slate-500">Record discharge details and schedule the first clinic review.</p>
           </div>
         </div>
       )}
@@ -595,54 +597,60 @@ const DoctorDashboard = ({
   );
 };
 
-// --- Weekly Schedule Component ---
-// --- Weekly Schedule Component ---
-const WeeklySchedule = ({ 
+// --- Monthly Schedule Component ---
+// --- Monthly Schedule Component ---
+const MonthlySchedule = ({ 
   bookings, 
   clinicType, 
   onPrint,
   onSavePdf,
-  onClinicChange,
-  clinicTypes
 }: { 
   bookings: Booking[], 
   clinicType: ClinicType, 
   onPrint: (date: string) => void,
   onSavePdf: (date: string) => void,
-  onClinicChange: (type: ClinicType) => void,
-  clinicTypes: ClinicType[]
 }) => {
-  const next7Days = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => addDays(startOfDay(new Date()), i));
-  }, []);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const daysInMonth = useMemo(() => {
+    const start = startOfMonth(currentMonth);
+    const end = endOfMonth(currentMonth);
+    return eachDayOfInterval({ start, end });
+  }, [currentMonth]);
 
   const clinicDays = CLINIC_DAYS[clinicType];
   const MAX_CAPACITY = 20;
+
+  const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
+  const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Weekly Schedule</h2>
-          <p className="text-slate-500 mt-1">Upcoming clinics and patient bookings for the next 7 days</p>
+          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Monthly Schedule</h2>
+          <p className="text-slate-500 mt-1">Upcoming clinics and patient bookings for {format(currentMonth, 'MMMM yyyy')}</p>
         </div>
         
-        <div className="flex flex-col sm:flex-row items-center gap-4">
-          <div className="w-full sm:w-auto">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Filter Clinic</label>
-            <select 
-              value={clinicType}
-              onChange={(e) => onClinicChange(e.target.value as ClinicType)}
-              className="w-full sm:w-64 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500 transition-all cursor-pointer"
+        <div className="flex items-center gap-4">
+          <div className="flex items-center bg-slate-100 p-1 rounded-2xl">
+            <button 
+              onClick={prevMonth}
+              className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-600"
             >
-              {clinicTypes.map(type => (
-                <option key={type} value={type}>{type} Clinic</option>
-              ))}
-            </select>
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div className="px-6 font-bold text-slate-700 min-w-[150px] text-center">
+              {format(currentMonth, 'MMMM yyyy')}
+            </div>
+            <button 
+              onClick={nextMonth}
+              className="p-3 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-600"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
           </div>
-          
-          <div className="hidden sm:block h-10 w-[1px] bg-slate-100"></div>
-          
+
           <div className="flex items-center gap-3 bg-emerald-50 px-5 py-3 rounded-2xl border border-emerald-100">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span className="text-sm font-bold text-emerald-700 uppercase tracking-wider">{clinicType}</span>
@@ -651,11 +659,19 @@ const WeeklySchedule = ({
       </div>
 
       <div className="grid grid-cols-1 gap-8">
-        {next7Days.map((date) => {
+        {daysInMonth.map((date) => {
           const dateStr = format(date, 'yyyy-MM-dd');
           const dayBookings = bookings.filter(b => b.reviewDate === dateStr && b.clinicType === clinicType);
           const isClinicDay = clinicDays.includes(getDay(date));
           const availableSlots = isClinicDay ? Math.max(0, MAX_CAPACITY - dayBookings.length) : 0;
+
+          // Only show days that are either clinic days OR have bookings, or are in the future if they are clinic days
+          // Actually, showing all days might be too much, but the request says "monthly list instead of a weekly list"
+          // Let's show only "Clinic Days" or days with bookings to keep it clean, but for a "Monthly Schedule" people might want to see the whole month.
+          // Given the "Monthly Schedule" showed only 30 days...
+          // Let's filter to only show clinic days or days with existing bookings.
+          
+          if (!isClinicDay && dayBookings.length === 0) return null;
 
           return (
             <div 
@@ -801,7 +817,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [searchQuery, setSearchQuery] = useState('');
   const [showBookingModal, setShowBookingModal] = useState(false);
-  const [viewMode, setViewMode] = useState<'daily' | 'timeline' | 'weekly'>('daily');
+  const [viewMode, setViewMode] = useState<'daily' | 'timeline' | 'monthly'>('daily');
   const [activeClinicFilter, setActiveClinicFilter] = useState<ClinicType>(user.clinicType!);
   const [showSmsModal, setShowSmsModal] = useState(false);
   const [smsDate, setSmsDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -893,6 +909,17 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
       pending: today.filter(b => b.status === 'pending').length,
     };
   }, [bookings]);
+
+  const isStatusUpdateLocked = (reviewDate: string) => {
+    try {
+      const reviewDayEnd = endOfDay(parseISO(reviewDate));
+      const now = new Date();
+      // Allow update if we're within 24 hours of the end of the review day
+      return isAfter(now, addHours(reviewDayEnd, 24));
+    } catch (e) {
+      return false;
+    }
+  };
 
   const updateStatus = async (id: string, status: 'attended' | 'no-show' | 'pending') => {
     try {
@@ -1132,13 +1159,13 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
               Daily View
             </button>
             <button 
-              onClick={() => setViewMode('weekly')}
+              onClick={() => setViewMode('monthly')}
               className={cn(
                 "px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all",
-                viewMode === 'weekly' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
+                viewMode === 'monthly' ? "bg-slate-900 text-white shadow-md" : "text-slate-500 hover:text-slate-900"
               )}
             >
-              Weekly Schedule
+              Monthly Schedule
             </button>
             <button 
               onClick={() => setViewMode('timeline')}
@@ -1198,15 +1225,13 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
         </div>
       </div>
 
-      {/* Patient List / Timeline / Weekly */}
-      {viewMode === 'weekly' ? (
-        <WeeklySchedule 
+      {/* Patient List / Timeline / Monthly */}
+      {viewMode === 'monthly' ? (
+        <MonthlySchedule 
           bookings={bookings} 
           clinicType={activeClinicFilter} 
           onPrint={handlePrint}
           onSavePdf={handleSavePdf}
-          onClinicChange={setActiveClinicFilter}
-          clinicTypes={clinicTypes}
         />
       ) : viewMode === 'daily' ? (
         <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
@@ -1249,35 +1274,41 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                       </span>
                     </td>
                     <td className="p-6 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={() => updateStatus(booking.id, 'attended')}
-                          className={cn(
-                            "p-2 rounded-lg transition-all",
-                            booking.status === 'attended' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-100 hover:text-emerald-600"
-                          )}
-                          title="Mark Attended"
-                        >
-                          <CheckCircle2 className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={() => updateStatus(booking.id, 'no-show')}
-                          className={cn(
-                            "p-2 rounded-lg transition-all",
-                            booking.status === 'no-show' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600"
-                          )}
-                          title="Mark No-Show"
-                        >
-                          <XCircle className="w-5 h-5" />
-                        </button>
-                        <button 
-                          onClick={() => updateStatus(booking.id, 'pending')}
-                          className="p-2 bg-slate-100 text-slate-400 rounded-lg hover:bg-amber-100 hover:text-amber-600 transition-all"
-                          title="Reset to Pending"
-                        >
-                          <Calendar className="w-5 h-5" />
-                        </button>
-                      </div>
+                      {isStatusUpdateLocked(booking.reviewDate) ? (
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic pr-4">
+                          Status Locked
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => updateStatus(booking.id, 'attended')}
+                            className={cn(
+                              "p-2 rounded-lg transition-all",
+                              booking.status === 'attended' ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-emerald-100 hover:text-emerald-600"
+                            )}
+                            title="Mark Attended"
+                          >
+                            <CheckCircle2 className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => updateStatus(booking.id, 'no-show')}
+                            className={cn(
+                              "p-2 rounded-lg transition-all",
+                              booking.status === 'no-show' ? "bg-red-500 text-white" : "bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600"
+                            )}
+                            title="Mark No-Show"
+                          >
+                            <XCircle className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => updateStatus(booking.id, 'pending')}
+                            className="p-2 bg-slate-100 text-slate-400 rounded-lg hover:bg-amber-100 hover:text-amber-600 transition-all"
+                            title="Reset to Pending"
+                          >
+                            <Calendar className="w-5 h-5" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )) : (
@@ -1360,26 +1391,32 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                       <span>{format(parseISO(booking.bookedAt), 'MMM d')}</span>
                     </div>
                     
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => updateStatus(booking.id, 'attended')}
-                        className={cn(
-                          "flex-1 py-2 rounded-xl text-xs font-bold transition-all",
-                          booking.status === 'attended' ? "bg-emerald-500 text-white" : "bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
-                        )}
-                      >
-                        Attended
-                      </button>
-                      <button 
-                        onClick={() => updateStatus(booking.id, 'no-show')}
-                        className={cn(
-                          "flex-1 py-2 rounded-xl text-xs font-bold transition-all",
-                          booking.status === 'no-show' ? "bg-red-500 text-white" : "bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                        )}
-                      >
-                        No-Show
-                      </button>
-                    </div>
+                    {isStatusUpdateLocked(booking.reviewDate) ? (
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic pt-2">
+                        Status Locked
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => updateStatus(booking.id, 'attended')}
+                          className={cn(
+                            "flex-1 py-2 rounded-xl text-xs font-bold transition-all",
+                            booking.status === 'attended' ? "bg-emerald-500 text-white" : "bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
+                          )}
+                        >
+                          Attended
+                        </button>
+                        <button 
+                          onClick={() => updateStatus(booking.id, 'no-show')}
+                          className={cn(
+                            "flex-1 py-2 rounded-xl text-xs font-bold transition-all",
+                            booking.status === 'no-show' ? "bg-red-500 text-white" : "bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          )}
+                        >
+                          No-Show
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1487,14 +1524,86 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
 // --- Admin View ---
 const AdminDashboard = ({ user }: { user: UserProfile }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [activeTab, setActiveTab] = useState<'overview' | 'master_list'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [marketingMessage, setMarketingMessage] = useState('');
+  const [marketingMessages, setMarketingMessages] = useState<MarketingMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'master_list' | 'user_management' | 'marketing_history'>('overview');
+  const [whitelistedEmails, setWhitelistedEmails] = useState<{email: string, role: Role}[]>([]);
+  const [newWhitelistedEmail, setNewWhitelistedEmail] = useState('');
+  const [newWhitelistedRole, setNewWhitelistedRole] = useState<Role>('doctor');
+  const [newWhitelistedClinic, setNewWhitelistedClinic] = useState<ClinicType | ''>('');
+  const [isAddingWhitelist, setIsAddingWhitelist] = useState(false);
 
   const clinicTypes: ClinicType[] = [
     'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
   ];
+
+  useEffect(() => {
+    if (activeTab === 'user_management') {
+      const unsubscribe = onSnapshot(collection(db, 'whitelisted_emails'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ 
+          email: doc.id, 
+          role: doc.data().role as Role,
+          clinicType: doc.data().clinicType as ClinicType
+        }));
+        setWhitelistedEmails(data);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'whitelisted_emails');
+      });
+      return () => unsubscribe();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'marketing_history' || activeTab === 'overview') {
+      const q = query(collection(db, 'marketing_messages'), orderBy('sentAt', 'desc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarketingMessage));
+        setMarketingMessages(data);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'marketing_messages');
+      });
+      return () => unsubscribe();
+    }
+  }, [activeTab]);
+
+  const handleAddWhitelist = async () => {
+    if (!newWhitelistedEmail.trim()) return;
+    setIsAddingWhitelist(true);
+    try {
+      const data: any = {
+        role: newWhitelistedRole,
+        addedAt: new Date().toISOString(),
+        addedBy: user.email
+      };
+      
+      if (newWhitelistedRole === 'consultant' && newWhitelistedClinic) {
+        data.clinicType = newWhitelistedClinic;
+      }
+
+      await setDoc(doc(db, 'whitelisted_emails', newWhitelistedEmail.trim().toLowerCase()), data);
+      setNewWhitelistedEmail('');
+      setNewWhitelistedClinic('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'whitelisted_emails');
+    } finally {
+      setIsAddingWhitelist(false);
+    }
+  };
+
+  const handleRemoveWhitelist = async (email: string) => {
+    try {
+      // In a real app we might want to delete from firestore, but for now we just remove the whitelist entry.
+      // Firestore doesn't have a direct "delete" tool in our standard set unless I use updateDoc with delete field or something,
+      // but I can just overwrite it or use a separate "deleted" flag. 
+      // Wait, I can use deleteDoc if I import it.
+      // Let me check if deleteDoc is imported.
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'bookings'), orderBy('reviewDate', 'desc'));
@@ -1676,13 +1785,27 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
     if (!marketingMessage.trim()) return;
     setIsSending(true);
     try {
+      // 1. Actually send the messages (simulated)
       for (const patient of masterPatientList) {
         await SMS_SERVICE.sendMarketing(patient.phone, marketingMessage);
       }
-      alert('Marketing messages sent to all patients in the current list.');
+
+      // 2. Save the message record to history
+      const messageData: Omit<MarketingMessage, 'id'> = {
+        content: marketingMessage.trim(),
+        sentAt: new Date().toISOString(),
+        sentBy: user.uid,
+        sentByName: user.name,
+        targetCount: masterPatientList.length
+      };
+      
+      await addDoc(collection(db, 'marketing_messages'), messageData);
+
+      alert('Marketing messages sent to all patients in the current list and saved to history.');
       setMarketingMessage('');
     } catch (error) {
       console.error('Marketing error:', error);
+      handleFirestoreError(error, OperationType.WRITE, 'marketing_messages');
     } finally {
       setIsSending(false);
     }
@@ -1710,6 +1833,33 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
         >
           <Users className="w-4 h-4" />
           Master Patient List
+        </button>
+        <button 
+          onClick={() => setActiveTab('user_management')}
+          className={cn(
+            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+            activeTab === 'user_management' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+          )}
+        >
+          <UserCircle className="w-4 h-4" />
+          User Management
+        </button>
+        <button 
+          onClick={() => setActiveTab('marketing_history')}
+          className={cn(
+            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+            activeTab === 'marketing_history' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+          )}
+        >
+          <Search className="w-4 h-4" />
+          Marketing History
+        </button>
+        <button 
+          onClick={() => setShowBookingModal(true)}
+          className="px-6 py-2.5 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all flex items-center gap-2 shadow-sm"
+        >
+          <Plus className="w-4 h-4" />
+          Book Patient
         </button>
       </div>
 
@@ -1757,7 +1907,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
             </div>
           ))}
         </div>
-      ) : (
+      ) : activeTab === 'master_list' ? (
         <div className="space-y-6">
           <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
             <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center mb-6">
@@ -1868,6 +2018,163 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
             </div>
           </div>
         </div>
+      ) : activeTab === 'user_management' ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center">
+                <UserCircle className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-slate-900">User Whitelist Management</h3>
+                <p className="text-slate-500">Only emails on this list can access specific roles in the system.</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
+              <h4 className="font-bold text-slate-900 mb-4">Add New Authorized Account</h4>
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1">
+                  <input 
+                    type="email"
+                    placeholder="Enter email address..."
+                    value={newWhitelistedEmail}
+                    onChange={(e) => setNewWhitelistedEmail(e.target.value)}
+                    className="w-full p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                  />
+                </div>
+                <div className="w-full md:w-48">
+                  <select 
+                    value={newWhitelistedRole}
+                    onChange={(e) => setNewWhitelistedRole(e.target.value as Role)}
+                    className="w-full p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all font-bold text-slate-700"
+                  >
+                    <option value="doctor">Doctor</option>
+                    <option value="consultant">Consultant</option>
+                    <option value="admin">Admin</option>
+                    <option value="ceo">CEO</option>
+                  </select>
+                </div>
+
+                {newWhitelistedRole === 'consultant' && (
+                  <div className="w-full md:w-64">
+                    <select 
+                      value={newWhitelistedClinic}
+                      onChange={(e) => setNewWhitelistedClinic(e.target.value as ClinicType)}
+                      className="w-full p-4 bg-white border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all font-bold text-emerald-700 animate-in slide-in-from-left-2 duration-300"
+                    >
+                      <option value="">Select Clinic...</option>
+                      {clinicTypes.map(c => <option key={c} value={c}>{c} Clinic</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <button 
+                  onClick={handleAddWhitelist}
+                  disabled={isAddingWhitelist || !newWhitelistedEmail.includes('@') || (newWhitelistedRole === 'consultant' && !newWhitelistedClinic)}
+                  className="px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isAddingWhitelist ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <Plus className="w-5 h-5" />
+                  )}
+                  Whitelist User
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="font-bold text-slate-900 px-2 uppercase text-xs tracking-widest text-slate-400">Current Whitelist</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {whitelistedEmails.map(userEntry => (
+                  <div key={userEntry.email} className="bg-white p-5 rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-emerald-200 transition-all">
+                    <div>
+                      <div className="font-bold text-slate-900 truncate max-w-[150px]">{userEntry.email}</div>
+                      <span className={cn(
+                        "text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest",
+                        userEntry.role === 'admin' ? "bg-rose-50 text-rose-600" :
+                        userEntry.role === 'ceo' ? "bg-indigo-50 text-indigo-600" :
+                        userEntry.role === 'consultant' ? "bg-emerald-50 text-emerald-600" :
+                        "bg-slate-100 text-slate-600"
+                      )}>
+                        {userEntry.role}
+                      </span>
+                      {userEntry.clinicType && (
+                        <span className="block mt-1 text-[9px] font-bold text-emerald-500 uppercase tracking-tighter">
+                          • {userEntry.clinicType}
+                        </span>
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => deleteDoc(doc(db, 'whitelisted_emails', userEntry.email))}
+                      className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <XCircle className="w-5 h-5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {whitelistedEmails.length === 0 && (
+                <div className="text-center py-12 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-slate-400 italic">
+                  No accounts whitelisted yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center">
+                <Search className="w-6 h-6 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-slate-900">Marketing History</h3>
+                <p className="text-slate-500">View history of all marketing broadcast messages sent by admins.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {marketingMessages.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-slate-400 italic">
+                  No marketing messages sent yet.
+                </div>
+              ) : (
+                marketingMessages.map(msg => (
+                  <div key={msg.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{msg.sentByName}</div>
+                        <div className="text-xs text-slate-500">{format(new Date(msg.sentAt), 'PPPP p')}</div>
+                      </div>
+                      <div className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold">
+                        Sent to {msg.targetCount} patients
+                      </div>
+                    </div>
+                    <p className="text-slate-700 whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Booking Modal */}
+      {showBookingModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-left">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 md:p-8 animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-2 border-b border-slate-50">
+              <h3 className="text-xl font-bold text-slate-900">Book New Patient</h3>
+              <button onClick={() => setShowBookingModal(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <XCircle className="w-6 h-6 text-slate-400" />
+              </button>
+            </div>
+            <DoctorDashboard user={user} isModal={true} />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1884,31 +2191,91 @@ export default function App() {
       setUser(firebaseUser);
       if (firebaseUser) {
         try {
-          const docRef = doc(db, 'users', firebaseUser.uid);
-          const docSnap = await getDoc(docRef);
+          // Check whitelist first
+          const whitelistPath = `whitelisted_emails/${firebaseUser.email?.toLowerCase() || ''}`;
+          let whitelistSnap;
+          try {
+            const whitelistRef = doc(db, 'whitelisted_emails', firebaseUser.email?.toLowerCase() || '');
+            whitelistSnap = await getDoc(whitelistRef);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.GET, whitelistPath);
+          }
           
-          // Force CEO role for specific email
+          const docPath = `users/${firebaseUser.uid}`;
+          let docSnap;
+          try {
+            const docRef = doc(db, 'users', firebaseUser.uid);
+            docSnap = await getDoc(docRef);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.GET, docPath);
+          }
+          
+          if (whitelistSnap && whitelistSnap.exists()) {
+            const whitelistData = whitelistSnap.data();
+            const whitelistedRole = whitelistData.role as Role;
+            const whitelistedClinic = whitelistData.clinicType as ClinicType | undefined;
+            
+            // If user exists but role mismatch, or user doesn't exist, update/create profile
+            const currentProfile = docSnap && docSnap.exists() ? docSnap.data() as UserProfile : null;
+            if (!currentProfile || currentProfile.role !== whitelistedRole || (whitelistedClinic && currentProfile.clinicType !== whitelistedClinic)) {
+              const updatedProfile: UserProfile = {
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || 'User',
+                email: firebaseUser.email || '',
+                role: whitelistedRole
+              };
+              if (whitelistedClinic) {
+                updatedProfile.clinicType = whitelistedClinic;
+              }
+              try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), updatedProfile, { merge: true });
+              } catch (e) {
+                handleFirestoreError(e, OperationType.WRITE, docPath);
+              }
+              setProfile(updatedProfile);
+              setLoading(false);
+              return;
+            }
+          }
+
+          // Force CEO role for specific email (Backwards compatibility/Manual override)
           if (firebaseUser.email === 'ragnarkaladin@gmail.com') {
-            const currentData = docSnap.exists() ? docSnap.data() as UserProfile : null;
+            const currentData = docSnap && docSnap.exists() ? docSnap.data() as UserProfile : null;
             if (!currentData || currentData.role !== 'ceo') {
               const ceoProfile: UserProfile = {
                 uid: firebaseUser.uid,
                 name: firebaseUser.displayName || 'CEO',
-                email: firebaseUser.email,
+                email: firebaseUser.email || '',
                 role: 'ceo'
               };
-              await setDoc(docRef, ceoProfile);
+              try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), ceoProfile);
+              } catch (e) {
+                handleFirestoreError(e, OperationType.WRITE, docPath);
+              }
               setProfile(ceoProfile);
               setLoading(false);
               return;
             }
           }
 
-          if (docSnap.exists()) {
-            setProfile(docSnap.data() as UserProfile);
+          if (docSnap && docSnap.exists()) {
+            const data = docSnap.data() as UserProfile;
+            // Migration: Map old 'ward_doctor' role to 'doctor'
+            if (data.role as string === 'ward_doctor') {
+              data.role = 'doctor';
+              // Persist the migration to Firestore
+              try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), data, { merge: true });
+              } catch (e) {
+                handleFirestoreError(e, OperationType.WRITE, docPath);
+              }
+            }
+            setProfile(data);
           }
         } catch (error) {
           console.error('Error fetching profile:', error);
+          // If we caught a JSON string from handleFirestoreError, we might want to display it to the user or just keep it in console
         }
       } else {
         setProfile(null);

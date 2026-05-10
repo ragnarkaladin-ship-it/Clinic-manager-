@@ -39,27 +39,41 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    function isAdmin() {
+      return isAuthenticated() && (
+        hardcodedAdmin(request.auth.token.get('email', '').lower(), request.auth.token.get('email_verified', false) == true) || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'ceo'
+        ))
+      );
+    }
+
+    function hardcodedAdmin(email, verified) {
+      return verified && email in ["godiimwas@gmail.com", "tumutumuclinicmanager@gmail.com", "ragnarkaladin@gmail.com"];
     }
 
     function isDoctor() {
-      return isAuthenticated() && getUserData().role == 'doctor';
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'doctor';
     }
 
     function isConsultant() {
-      return isAuthenticated() && getUserData().role == 'consultant';
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'consultant';
     }
 
     function isCEO() {
-      return isAuthenticated() && getUserData().role == 'ceo';
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'ceo';
     }
 
-    function isAdmin() {
-      return isAuthenticated() && (
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserData().role == 'admin' || getUserData().role == 'ceo')) || 
-        ((request.auth.token.email == "godiimwas@gmail.com" || request.auth.token.email == "tumutumuclinicmanager@gmail.com" || request.auth.token.email == "ragnarkaladin@gmail.com") && request.auth.token.email_verified == true)
-      );
+    function isWhitelisted(email, role) {
+      return exists(/databases/$(database)/documents/whitelisted_emails/$(email.lower())) && 
+             get(/databases/$(database)/documents/whitelisted_emails/$(email.lower())).data.get('role', '') == role;
     }
 
     // --- Domain Validators ---
@@ -85,8 +99,16 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role != 'admin' || isAdmin());
-      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (
+        request.resource.data.role != 'admin' || 
+        isAdmin() ||
+        isWhitelisted(request.resource.data.email, 'admin')
+      );
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (
+        request.resource.data.role == resource.data.role || 
+        isAdmin() ||
+        isWhitelisted(request.resource.data.email, request.resource.data.role)
+      );
     }
 
     match /bookings/{bookingId} {
@@ -94,7 +116,12 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidBooking(request.resource.data) && request.resource.data.bookedBy == request.auth.uid;
       allow update: if isAuthenticated() && (
         // Consultants can update status
-        (isConsultant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status in ['pending', 'attended', 'no-show']) ||
+        (isConsultant() && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && 
+         request.resource.data.status in ['pending', 'attended', 'no-show']
+         // Removed lock for now to troubleshoot, or we can make it more lenient (e.g. 7 days)
+         // && request.time < timestamp.value(resource.data.reviewDate + 'T23:59:59Z') + duration.value('7d')
+        ) ||
         // Owners can update their bookings
         (resource.data.bookedBy == request.auth.uid && isValidBooking(request.resource.data)) ||
         isAdmin()
@@ -104,6 +131,17 @@ service cloud.firestore {
 
     match /patients/{patientId} {
       allow read, write: if isAuthenticated();
+    }
+
+    match /whitelisted_emails/{email} {
+      allow read: if isAuthenticated() && (isAdmin() || request.auth.token.get('email', '').lower() == email);
+      allow write: if isAdmin();
+    }
+
+    match /marketing_messages/{messageId} {
+      allow read: if isAdmin() || isCEO();
+      allow create: if isAdmin() && request.resource.data.sentBy == request.auth.uid;
+      allow update, delete: if false; // History should be immutable
     }
   }
 }

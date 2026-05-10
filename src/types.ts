@@ -40,6 +40,21 @@ export interface Booking {
   comments?: string;
 }
 
+export interface MarketingMessage {
+  id: string;
+  content: string;
+  sentAt: string;
+  sentBy: string;
+  sentByName: string;
+  targetCount: number;
+}
+
+export interface WhitelistedEmail {
+  email: string;
+  role: Role;
+  clinicType?: ClinicType;
+}
+
 export const CLINIC_DAYS: Record<ClinicType, number[]> = {
   'Pediatrics': [1, 3], // Mon, Wed
   'Neuro': [1], // Mon
