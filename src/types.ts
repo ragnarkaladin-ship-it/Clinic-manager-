@@ -1,4 +1,28 @@
-export type Role = 'doctor' | 'consultant' | 'admin' | 'ceo';
+export type Role = 'doctor' | 'consultant' | 'admin' | 'ceo' | 'theatre' | 'cmo';
+
+export type SurgicalDepartment = 
+  | 'General Surgery' 
+  | 'Orthopedic' 
+  | 'Urology' 
+  | 'ENT' 
+  | 'Neurosurgery' 
+  | 'Plastic Surgery' 
+  | 'Ophthalmology' 
+  | 'OGD/Colonoscopy';
+
+export interface SurgicalCase {
+  id: string;
+  patientName: string;
+  patientNumber: string; // Phone or File Number
+  diagnosis: string;
+  procedure: string;
+  department: SurgicalDepartment;
+  surgeon: string;
+  date: string; // ISO date string
+  recordedBy: string; // uid
+  recordedByName: string;
+  recordedAt: string; // ISO date-time string
+}
 
 export type ClinicType = 
   | 'Pediatrics' 

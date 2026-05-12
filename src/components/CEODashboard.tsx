@@ -10,7 +10,9 @@ import {
   Booking, 
   ClinicType, 
   UserProfile,
-  MarketingMessage
+  MarketingMessage,
+  SurgicalCase,
+  SurgicalDepartment
 } from '../types';
 import { 
   TrendingUp, 
@@ -26,7 +28,10 @@ import {
   PieChart as PieChartIcon,
   LayoutGrid,
   Search,
-  History
+  History,
+  Scissors,
+  User,
+  ClipboardList
 } from 'lucide-react';
 import { 
   format, 
@@ -66,7 +71,7 @@ import autoTable from 'jspdf-autotable';
 import { handleFirestoreError, OperationType } from '../App';
 
 type TimeRange = 'daily' | 'monthly' | 'quarterly' | 'yearly';
-type ViewMode = 'analytics' | 'marketing';
+type ViewMode = 'analytics' | 'marketing' | 'surgical';
 
 const CLINIC_PRICES: Record<ClinicType, number> = {
   'Pediatrics': 1500,
@@ -88,8 +93,9 @@ const CLINIC_COLORS: Record<string, string> = {
   'MOPC': '#64748b', // slate-500
 };
 
-export const CEODashboard = ({ user }: { user: UserProfile }) => {
+export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO?: boolean }) => {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [surgicalCases, setSurgicalCases] = useState<SurgicalCase[]>([]);
   const [marketingMessages, setMarketingMessages] = useState<MarketingMessage[]>([]);
   const [timeRange, setTimeRange] = useState<TimeRange>('monthly');
   const [viewMode, setViewMode] = useState<ViewMode>('analytics');
@@ -106,6 +112,14 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
       handleFirestoreError(error, OperationType.LIST, 'bookings');
     });
 
+    const qSurgical = query(collection(db, 'surgical_cases'), orderBy('date', 'desc'));
+    const unsubSurgical = onSnapshot(qSurgical, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SurgicalCase));
+      setSurgicalCases(docs);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'surgical_cases');
+    });
+
     const qMarketing = query(collection(db, 'marketing_messages'), orderBy('sentAt', 'desc'));
     const unsubMarketing = onSnapshot(qMarketing, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarketingMessage));
@@ -116,6 +130,7 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
 
     return () => {
       unsubBookings();
+      unsubSurgical();
       unsubMarketing();
     };
   }, []);
@@ -152,6 +167,13 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
     });
   }, [bookings, dateRangeRange]);
 
+  const filteredSurgicalCases = useMemo(() => {
+    return surgicalCases.filter(sc => {
+      const date = parseISO(sc.date);
+      return isWithinInterval(date, { start: dateRangeRange.start, end: dateRangeRange.end });
+    });
+  }, [surgicalCases, dateRangeRange]);
+
   const stats = useMemo(() => {
     const clinicStats: Record<ClinicType, { attended: number, noShow: number, pending: number, revenue: number }> = {
       'Pediatrics': { attended: 0, noShow: 0, pending: 0, revenue: 0 },
@@ -183,6 +205,18 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
 
     return { clinicStats, totalAttended, totalNoShow, totalRevenue };
   }, [filteredBookings]);
+
+  const surgicalStats = useMemo(() => {
+    const deptStats: Record<string, number> = {};
+    const surgeonStats: Record<string, number> = {};
+
+    filteredSurgicalCases.forEach(sc => {
+      deptStats[sc.department] = (deptStats[sc.department] || 0) + 1;
+      surgeonStats[sc.surgeon] = (surgeonStats[sc.surgeon] || 0) + 1;
+    });
+
+    return { deptStats, surgeonStats, totalCases: filteredSurgicalCases.length };
+  }, [filteredSurgicalCases]);
 
   const chartData = useMemo(() => {
     return (Object.entries(stats.clinicStats) as [ClinicType, typeof stats.clinicStats[ClinicType]][]).map(([name, data]) => ({
@@ -228,46 +262,69 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
     const rangeText = format(dateRangeRange.start, 'PPP') + ' - ' + format(dateRangeRange.end, 'PPP');
     
     doc.setFontSize(20);
-    doc.text('MedConnect Tumutumu - Financial Report', 14, 22);
+    doc.text(`MedConnect Tumutumu - ${isCMO ? 'CMO' : 'CEO'} Report`, 14, 22);
     doc.setFontSize(10);
     doc.text(`Generated on: ${format(new Date(), 'PPP p')}`, 14, 30);
     doc.text(`Report Period: ${rangeText}`, 14, 35);
 
-    doc.setFontSize(14);
-    doc.text('Performance Summary', 14, 50);
+    if (!isCMO) {
+      doc.setFontSize(14);
+      doc.text('Performance Summary', 14, 50);
 
-    const summaryData = [
-      ['Total Patients Attended', stats.totalAttended.toString()],
-      ['Total No-shows', stats.totalNoShow.toString()],
-      ['Total Revenue', `KSh ${stats.totalRevenue.toLocaleString()}`]
-    ];
+      const summaryData = [
+        ['Total Patients Attended', stats.totalAttended.toString()],
+        ['Total No-shows', stats.totalNoShow.toString()],
+        ['Total Revenue', `KSh ${stats.totalRevenue.toLocaleString()}`]
+      ];
 
-    autoTable(doc, {
-      startY: 55,
-      head: [['Metric', 'Value']],
-      body: summaryData,
-      theme: 'striped',
-    });
+      autoTable(doc, {
+        startY: 55,
+        head: [['Metric', 'Value']],
+        body: summaryData,
+        theme: 'striped',
+      });
 
-    doc.text('Revenue by Clinic', 14, (doc as any).lastAutoTable.finalY + 15);
+      doc.text('Revenue by Clinic', 14, (doc as any).lastAutoTable.finalY + 15);
 
-    const tableData = (Object.entries(stats.clinicStats) as [ClinicType, typeof stats.clinicStats[ClinicType]][]).map(([name, data]) => [
-      name,
-      data.attended,
-      data.noShow,
-      `KSh ${CLINIC_PRICES[name]}`,
-      `KSh ${data.revenue.toLocaleString()}`
-    ]);
+      const tableData = (Object.entries(stats.clinicStats) as [ClinicType, typeof stats.clinicStats[ClinicType]][]).map(([name, data]) => [
+        name,
+        data.attended,
+        data.noShow,
+        `KSh ${CLINIC_PRICES[name]}`,
+        `KSh ${data.revenue.toLocaleString()}`
+      ]);
 
-    autoTable(doc, {
-      startY: (doc as any).lastAutoTable.finalY + 20,
-      head: [['Clinic', 'Attended', 'No-show', 'Rate/Visit', 'Total Revenue']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [16, 185, 129] }
-    });
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 20,
+        head: [['Clinic', 'Attended', 'No-show', 'Rate/Visit', 'Total Revenue']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [16, 185, 129] }
+      });
+    }
 
-    doc.save(`Financial_Report_${timeRange}_${format(selectedDate, 'yyyy-MM-dd')}.pdf`);
+    // Add Surgical Summary if cases exist
+    if (surgicalStats.totalCases > 0) {
+      const nextY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 15 : 50;
+      doc.setFontSize(14);
+      doc.text('Surgical Performance Summary', 14, nextY);
+
+      const surgicalData = [
+        ['Total Surgical Cases', surgicalStats.totalCases.toString()],
+        ['Top Department', Object.entries(surgicalStats.deptStats).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0]?.[0] || 'N/A'],
+        ['Top Surgeon', Object.entries(surgicalStats.surgeonStats).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0]?.[0] || 'N/A']
+      ];
+
+      autoTable(doc, {
+        startY: nextY + 5,
+        head: [['Metric', 'Value']],
+        body: surgicalData,
+        theme: 'striped',
+        headStyles: { fillColor: [79, 70, 229] } // indigo-600
+      });
+    }
+
+    doc.save(`${isCMO ? 'CMO' : 'CEO'}_Report_${timeRange}_${format(selectedDate, 'yyyy-MM-dd')}.pdf`);
   };
 
   if (loading) {
@@ -282,27 +339,40 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
     <div className="max-w-7xl mx-auto px-6 py-8 space-y-8 animate-in fade-in duration-500">
       {/* View Mode Selector */}
       <div className="flex gap-4 p-1 bg-slate-100 rounded-2xl w-fit">
+        {!isCMO && (
+          <button
+            onClick={() => setViewMode('analytics')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all ${
+              viewMode === 'analytics' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            Clinic Performance
+          </button>
+        )}
         <button
-          onClick={() => setViewMode('analytics')}
+          onClick={() => setViewMode('surgical')}
           className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all ${
-            viewMode === 'analytics' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            viewMode === 'surgical' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
-          <BarChart3 className="w-4 h-4" />
-          Financial & Operational
+          <Scissors className="w-4 h-4" />
+          Surgical Performance
         </button>
-        <button
-          onClick={() => setViewMode('marketing')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all ${
-            viewMode === 'marketing' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          Marketing History
-        </button>
+        {!isCMO && (
+          <button
+            onClick={() => setViewMode('marketing')}
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold transition-all ${
+              viewMode === 'marketing' ? 'bg-white text-slate-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            Marketing History
+          </button>
+        )}
       </div>
 
-      {viewMode === 'analytics' ? (
+      {viewMode === 'analytics' && !isCMO ? (
         <>
           {/* Header & Controls */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
@@ -562,6 +632,155 @@ export const CEODashboard = ({ user }: { user: UserProfile }) => {
             </div>
           </div>
         </>
+      ) : viewMode === 'surgical' ? (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* Header & Controls */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">{isCMO ? 'CMO' : 'CEO'} Surgical Performance</h1>
+              <p className="text-slate-500 mt-1">Surgical case breakdown and performance metrics</p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex p-1 bg-slate-100 rounded-xl">
+                {(['daily', 'monthly', 'quarterly', 'yearly'] as TimeRange[]).map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                      timeRange === range 
+                      ? 'bg-white text-slate-900 shadow-sm' 
+                      : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input 
+                  type={timeRange === 'daily' ? 'date' : timeRange === 'monthly' ? 'month' : 'date'}
+                  value={format(selectedDate, timeRange === 'monthly' ? 'yyyy-MM' : 'yyyy-MM-dd')}
+                  onChange={(e) => setSelectedDate(new Date(e.target.value))}
+                  className="p-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              <button 
+                onClick={handleExportPDF}
+                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
+              >
+                <Download className="w-4 h-4" />
+                Export PDF
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100">
+              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Total Surgical Cases</p>
+              <p className="text-4xl font-black text-slate-900 mt-1">{surgicalStats.totalCases}</p>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100">
+              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Most Active Dept</p>
+              <p className="text-2xl font-black text-indigo-600 mt-1">
+                {Object.entries(surgicalStats.deptStats).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0]?.[0] || 'None'}
+              </p>
+            </div>
+            <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100">
+              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Top Performing Surgeon</p>
+              <p className="text-2xl font-black text-emerald-600 mt-1">
+                {Object.entries(surgicalStats.surgeonStats).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0]?.[0] || 'None'}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Dept Breakdown */}
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+              <h2 className="text-xl font-bold text-slate-900 mb-8 flex items-center gap-3">
+                <BarChart3 className="w-5 h-5 text-indigo-600" />
+                Cases by Department
+              </h2>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={Object.entries(surgicalStats.deptStats).map(([name, value]) => ({ name, value }))} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} width={100} tick={{ fontSize: 10, fontWeight: 700 }} />
+                    <Tooltip contentStyle={{ borderRadius: '16px' }} />
+                    <Bar dataKey="value" fill="#4f46e5" radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Surgeon Breakdown */}
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+              <h2 className="text-xl font-bold text-slate-900 mb-8 flex items-center gap-3">
+                <User className="w-5 h-5 text-emerald-600" />
+                Cases by Surgeon
+              </h2>
+              <div className="h-[350px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={Object.entries(surgicalStats.surgeonStats).map(([name, value]) => ({ name, value }))}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} />
+                    <Tooltip contentStyle={{ borderRadius: '16px' }} />
+                    <Bar dataKey="value" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Surgical Case Log */}
+          <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
+            <div className="p-8 border-b border-slate-50 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
+                <ClipboardList className="w-5 h-5 text-slate-600" />
+                Detailed Surgical Log
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-slate-50/50">
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Date</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Patient</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Department</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Procedure</th>
+                    <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Surgeon</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredSurgicalCases.map((sc) => (
+                    <tr key={sc.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-8 py-4 text-slate-600 text-sm font-medium">{format(parseISO(sc.date), 'MMM d, yyyy')}</td>
+                      <td className="px-8 py-4 font-bold text-slate-900">{sc.patientName}</td>
+                      <td className="px-8 py-4">
+                        <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                          {sc.department}
+                        </span>
+                      </td>
+                      <td className="px-8 py-4 text-slate-600 text-sm">{sc.procedure}</td>
+                      <td className="px-8 py-4 text-slate-900 font-bold">{sc.surgeon}</td>
+                    </tr>
+                  ))}
+                  {filteredSurgicalCases.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-8 py-20 text-center text-slate-400 italic">
+                        No surgical cases recorded for this period.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="space-y-6">
           <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8">

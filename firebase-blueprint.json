@@ -8,7 +8,7 @@
         "uid": { "type": "string" },
         "name": { "type": "string" },
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["doctor", "consultant", "admin", "ceo"] },
+        "role": { "type": "string", "enum": ["doctor", "consultant", "admin", "ceo", "theatre", "cmo"] },
         "clinicType": { "type": "string", "description": "For consultants: Pediatrics, Neuro, ENT, Surgical, Orthopedic, Gynae/Obs, MOPC" }
       },
       "required": ["uid", "name", "email", "role"]
@@ -52,7 +52,7 @@
       "type": "object",
       "properties": {
         "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["doctor", "consultant", "admin", "ceo"] },
+        "role": { "type": "string", "enum": ["doctor", "consultant", "admin", "ceo", "theatre", "cmo"] },
         "clinicType": { "type": "string", "description": "For consultants: Pediatrics, Neuro, ENT, Surgical, Orthopedic, Gynae/Obs, MOPC" },
         "addedAt": { "type": "string", "format": "date-time" },
         "addedBy": { "type": "string" }
@@ -72,6 +72,25 @@
         "targetClinic": { "type": "string" }
       },
       "required": ["content", "sentAt", "sentBy"]
+    },
+    "SurgicalCase": {
+      "title": "Surgical Case",
+      "description": "A record of a surgery performed",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientName": { "type": "string" },
+        "patientNumber": { "type": "string" },
+        "diagnosis": { "type": "string" },
+        "procedure": { "type": "string" },
+        "department": { "type": "string", "enum": ["General Surgery", "Orthopedic", "Urology", "ENT", "Neurosurgery", "Plastic Surgery", "Ophthalmology", "OGD/Colonoscopy"] },
+        "surgeon": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "recordedBy": { "type": "string" },
+        "recordedByName": { "type": "string" },
+        "recordedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "patientName", "patientNumber", "diagnosis", "procedure", "department", "surgeon", "date"]
     }
   },
   "firestore": {
@@ -94,6 +113,10 @@
     "/marketing_messages/{messageId}": {
       "schema": "MarketingMessage",
       "description": "History of marketing messages sent"
+    },
+    "/surgical_cases/{caseId}": {
+      "schema": "SurgicalCase",
+      "description": "Surgical case records"
     }
   }
 }

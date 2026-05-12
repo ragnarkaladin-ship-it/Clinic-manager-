@@ -23,7 +23,8 @@ import {
   updateDoc,
   deleteDoc,
   orderBy,
-  getDocFromServer
+  getDocFromServer,
+  limit
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { CEODashboard } from './components/CEODashboard';
@@ -33,6 +34,8 @@ import {
   Booking, 
   ClinicType, 
   MarketingMessage,
+  SurgicalCase,
+  SurgicalDepartment,
   CLINIC_DAYS, 
   DAY_NAMES 
 } from './types';
@@ -56,7 +59,9 @@ import {
   MessageSquare,
   Send,
   Bell,
-  TrendingUp
+  TrendingUp,
+  Scissors,
+  ShieldCheck
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay, endOfDay, addHours, isAfter, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { jsPDF } from 'jspdf';
@@ -387,6 +392,30 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
             <div className="font-bold text-slate-900">CEO</div>
             <div className="text-sm text-slate-500">Financial reports and operational overview.</div>
           </button>
+
+          <button 
+            onClick={() => setSelectedRole('cmo')}
+            className={cn(
+              "p-6 rounded-2xl border-2 transition-all text-left group",
+              selectedRole === 'cmo' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
+            )}
+          >
+            <ShieldCheck className={cn("w-8 h-8 mb-3", selectedRole === 'cmo' ? "text-indigo-600" : "text-slate-400")} />
+            <div className="font-bold text-slate-900">CMO</div>
+            <div className="text-sm text-slate-500">Clinical performance and medical oversight.</div>
+          </button>
+
+          <button 
+            onClick={() => setSelectedRole('theatre')}
+            className={cn(
+              "p-6 rounded-2xl border-2 transition-all text-left group",
+              selectedRole === 'theatre' ? "border-emerald-500 bg-emerald-50" : "border-slate-100 hover:border-emerald-200"
+            )}
+          >
+            <Scissors className={cn("w-8 h-8 mb-3", selectedRole === 'theatre' ? "text-indigo-600" : "text-slate-400")} />
+            <div className="font-bold text-slate-900">Theatre</div>
+            <div className="text-sm text-slate-500">Record surgical cases and procedures.</div>
+          </button>
         </div>
 
         {selectedRole === 'consultant' && (
@@ -411,6 +440,281 @@ const RoleSelection = ({ onSelect }: { onSelect: (role: Role, clinicType?: Clini
           Get Started
         </button>
       </div>
+    </div>
+  );
+};
+
+// --- Theatre View ---
+const SurgicalCaseForm = ({ 
+  user, 
+  onSuccess 
+}: { 
+  user: UserProfile, 
+  onSuccess?: () => void 
+}) => {
+  const [patientName, setPatientName] = useState('');
+  const [patientNumber, setPatientNumber] = useState('');
+  const [diagnosis, setDiagnosis] = useState('');
+  const [procedure, setProcedure] = useState('');
+  const [department, setDepartment] = useState<SurgicalDepartment | ''>('');
+  const [surgeon, setSurgeon] = useState('');
+  const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const departments: SurgicalDepartment[] = [
+    'General Surgery', 'Orthopedic', 'Urology', 'ENT', 'Neurosurgery', 'Plastic Surgery', 'Ophthalmology', 'OGD/Colonoscopy'
+  ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!department) return;
+    
+    setIsSubmitting(true);
+    try {
+      const caseData: Omit<SurgicalCase, 'id'> = {
+        patientName,
+        patientNumber,
+        diagnosis,
+        procedure,
+        department: department as SurgicalDepartment,
+        surgeon,
+        date,
+        recordedBy: user.uid,
+        recordedByName: user.name,
+        recordedAt: new Date().toISOString(),
+      };
+      
+      await addDoc(collection(db, 'surgical_cases'), caseData);
+      
+      setSuccess(true);
+      setPatientName('');
+      setPatientNumber('');
+      setDiagnosis('');
+      setProcedure('');
+      setDepartment('');
+      setSurgeon('');
+      if (onSuccess) onSuccess();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'surgical_cases');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Patient Name</label>
+          <input 
+            required
+            value={patientName}
+            onChange={(e) => setPatientName(e.target.value)}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+            placeholder="Full Name"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Patient Number / File No.</label>
+          <input 
+            required
+            value={patientNumber}
+            onChange={(e) => setPatientNumber(e.target.value)}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+            placeholder="e.g. 12345 or 0712345678"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Diagnosis (Dx)</label>
+          <input 
+            required
+            value={diagnosis}
+            onChange={(e) => setDiagnosis(e.target.value)}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+            placeholder="e.g. Acute Appendicitis"
+          />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Surgeon Name</label>
+          <input 
+            required
+            value={surgeon}
+            onChange={(e) => setSurgeon(e.target.value)}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+            placeholder="Dr. Name"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-slate-700">Procedure Done</label>
+        <textarea 
+          required
+          value={procedure}
+          onChange={(e) => setProcedure(e.target.value)}
+          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all min-h-[100px]"
+          placeholder="Detailed surgical procedure..."
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Department</label>
+          <select 
+            required
+            value={department}
+            onChange={(e) => setDepartment(e.target.value as SurgicalDepartment)}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+          >
+            <option value="">Select Department...</option>
+            {departments.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-slate-700">Surgery Date</label>
+          <input 
+            required
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+          />
+        </div>
+      </div>
+
+      <button 
+        type="submit"
+        disabled={isSubmitting}
+        className={cn(
+          "w-full py-4 rounded-2xl font-bold text-white transition-all shadow-lg flex items-center justify-center gap-2",
+          success ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-700"
+        )}
+      >
+        {isSubmitting ? (
+          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        ) : success ? (
+          <>
+            <CheckCircle2 className="w-5 h-5" />
+            Case Recorded Successfully
+          </>
+        ) : (
+          <>
+            <Plus className="w-5 h-5" />
+            Record Surgical Case
+          </>
+        )}
+      </button>
+    </form>
+  );
+};
+
+const TheatreDashboard = ({ user }: { user: UserProfile }) => {
+  const [cases, setCases] = useState<SurgicalCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'surgical_cases'),
+      orderBy('recordedAt', 'desc'),
+      limit(50)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SurgicalCase));
+      setCases(data);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'surgical_cases');
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  return (
+    <div className="max-w-5xl mx-auto p-6 space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center">
+            <Scissors className="w-7 h-7 text-indigo-600" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">Theatre Management</h2>
+            <p className="text-slate-500">Record and track all surgical procedures</p>
+          </div>
+        </div>
+        <button 
+          onClick={() => setShowForm(!showForm)}
+          className={cn(
+            "flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95",
+            showForm ? "bg-slate-100 text-slate-600" : "bg-indigo-600 text-white hover:bg-indigo-700"
+          )}
+        >
+          {showForm ? <ChevronLeft className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+          {showForm ? 'Back to Logs' : 'Record New Case'}
+        </button>
+      </div>
+
+      {showForm ? (
+        <div className="bg-white rounded-3xl shadow-xl p-8 border border-slate-100 max-w-3xl mx-auto animate-in zoom-in-95 duration-300">
+          <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-indigo-600" />
+            Surgical Case Form
+          </h3>
+          <SurgicalCaseForm user={user} onSuccess={() => setTimeout(() => setShowForm(false), 2000)} />
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+          <div className="p-8 border-b border-slate-50">
+            <h3 className="text-xl font-bold text-slate-900">Recent Surgical Logs</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-50/50">
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Patient</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Diagnosis</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Department</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Procedure</th>
+                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Surgeon</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {cases.map((sc) => (
+                  <tr key={sc.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-8 py-4 text-slate-600 text-sm">{format(parseISO(sc.date), 'MMM d, yyyy')}</td>
+                    <td className="px-8 py-4">
+                      <div className="font-bold text-slate-900">{sc.patientName}</div>
+                      <div className="text-xs text-slate-500">{sc.patientNumber}</div>
+                    </td>
+                    <td className="px-8 py-4 text-slate-600 text-sm italic">{sc.diagnosis}</td>
+                    <td className="px-8 py-4">
+                      <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-wider">
+                        {sc.department}
+                      </span>
+                    </td>
+                    <td className="px-8 py-4 text-slate-600 text-sm truncate max-w-[200px]">{sc.procedure}</td>
+                    <td className="px-8 py-4 text-slate-900 font-bold">{sc.surgeon}</td>
+                  </tr>
+                ))}
+                {cases.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-20 text-center text-slate-400 italic">
+                      No surgical cases recorded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2053,6 +2357,8 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                     <option value="consultant">Consultant</option>
                     <option value="admin">Admin</option>
                     <option value="ceo">CEO</option>
+                    <option value="cmo">CMO</option>
+                    <option value="theatre">Theatre</option>
                   </select>
                 </div>
 
@@ -2352,6 +2658,8 @@ export default function App() {
           {profile.role === 'consultant' && <ConsultantDashboard user={profile} />}
           {profile.role === 'admin' && <AdminDashboard user={profile} />}
           {profile.role === 'ceo' && <CEODashboard user={profile} />}
+          {profile.role === 'cmo' && <CEODashboard user={profile} isCMO={true} />}
+          {profile.role === 'theatre' && <TheatreDashboard user={profile} />}
         </main>
 
         {/* Footer */}

@@ -71,6 +71,20 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'ceo';
     }
 
+    function isCMO() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'cmo';
+    }
+
+    function isTheatre() {
+      return isAuthenticated() && (
+        request.auth.token.get('email', '').lower() == 'tumutumutheatre@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'theatre')
+      );
+    }
+
     function isWhitelisted(email, role) {
       return exists(/databases/$(database)/documents/whitelisted_emails/$(email.lower())) && 
              get(/databases/$(database)/documents/whitelisted_emails/$(email.lower())).data.get('role', '') == role;
@@ -82,8 +96,21 @@ service cloud.firestore {
              data.uid is string && data.uid.size() > 0 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.email is string && data.email.size() > 0 &&
-             data.role in ['doctor', 'consultant', 'admin', 'ceo'] &&
+             data.role in ['doctor', 'consultant', 'admin', 'ceo', 'theatre', 'cmo'] &&
              (!('clinicType' in data) || data.clinicType in ['Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC']);
+    }
+
+    function isValidSurgicalCase(data) {
+      return data.keys().hasAll(['patientName', 'patientNumber', 'diagnosis', 'procedure', 'department', 'surgeon', 'date', 'recordedBy', 'recordedByName', 'recordedAt']) &&
+             data.patientName is string && data.patientName.size() > 0 && data.patientName.size() < 100 &&
+             data.patientNumber is string && data.patientNumber.size() > 0 && data.patientNumber.size() < 20 &&
+             data.diagnosis is string && data.diagnosis.size() > 0 && data.diagnosis.size() < 1000 &&
+             data.procedure is string && data.procedure.size() > 0 && data.procedure.size() < 1000 &&
+             data.department in ['General Surgery', 'Orthopedic', 'Urology', 'ENT', 'Neurosurgery', 'Plastic Surgery', 'Ophthalmology', 'OGD/Colonoscopy'] &&
+             data.surgeon is string && data.surgeon.size() > 0 &&
+             data.date is string &&
+             data.recordedBy == request.auth.uid &&
+             data.recordedByName is string;
     }
 
     function isValidBooking(data) {
@@ -139,9 +166,16 @@ service cloud.firestore {
     }
 
     match /marketing_messages/{messageId} {
-      allow read: if isAdmin() || isCEO();
+      allow read: if isAdmin() || isCEO() || isCMO();
       allow create: if isAdmin() && request.resource.data.sentBy == request.auth.uid;
       allow update, delete: if false; // History should be immutable
+    }
+
+    match /surgical_cases/{caseId} {
+      allow read: if isAuthenticated();
+      allow create: if (isTheatre() || isAdmin()) && isValidSurgicalCase(request.resource.data);
+      allow update: if (isTheatre() && resource.data.recordedBy == request.auth.uid && isValidSurgicalCase(request.resource.data)) || isAdmin();
+      allow delete: if isAdmin();
     }
   }
 }
