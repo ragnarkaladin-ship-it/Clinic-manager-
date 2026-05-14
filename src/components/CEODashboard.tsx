@@ -14,6 +14,7 @@ import {
   SurgicalCase,
   SurgicalDepartment
 } from '../types';
+import { AUDIT_LOGGER } from '../lib/audit';
 import { 
   TrendingUp, 
   Users, 
@@ -66,7 +67,7 @@ import {
   LineChart,
   Line
 } from 'recharts';
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { handleFirestoreError, OperationType } from '../App';
 
@@ -257,19 +258,19 @@ export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO
     });
   }, [timeRange, dateRangeRange, bookings]);
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
+  const handleExportPDF = async () => {
+    const pdf = new jsPDF();
     const rangeText = format(dateRangeRange.start, 'PPP') + ' - ' + format(dateRangeRange.end, 'PPP');
     
-    doc.setFontSize(20);
-    doc.text(`MedConnect Tumutumu - ${isCMO ? 'CMO' : 'CEO'} Report`, 14, 22);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${format(new Date(), 'PPP p')}`, 14, 30);
-    doc.text(`Report Period: ${rangeText}`, 14, 35);
+    pdf.setFontSize(20);
+    pdf.text(`MedConnect Tumutumu - ${isCMO ? 'CMO' : 'CEO'} Report`, 14, 22);
+    pdf.setFontSize(10);
+    pdf.text(`Generated on: ${format(new Date(), 'PPP p')}`, 14, 30);
+    pdf.text(`Report Period: ${rangeText}`, 14, 35);
 
     if (!isCMO) {
-      doc.setFontSize(14);
-      doc.text('Performance Summary', 14, 50);
+      pdf.setFontSize(14);
+      pdf.text('Performance Summary', 14, 50);
 
       const summaryData = [
         ['Total Patients Attended', stats.totalAttended.toString()],
@@ -277,14 +278,14 @@ export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO
         ['Total Revenue', `KSh ${stats.totalRevenue.toLocaleString()}`]
       ];
 
-      autoTable(doc, {
+      autoTable(pdf, {
         startY: 55,
         head: [['Metric', 'Value']],
         body: summaryData,
         theme: 'striped',
       });
 
-      doc.text('Revenue by Clinic', 14, (doc as any).lastAutoTable.finalY + 15);
+      pdf.text('Revenue by Clinic', 14, (pdf as any).lastAutoTable.finalY + 15);
 
       const tableData = (Object.entries(stats.clinicStats) as [ClinicType, typeof stats.clinicStats[ClinicType]][]).map(([name, data]) => [
         name,
@@ -294,8 +295,8 @@ export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO
         `KSh ${data.revenue.toLocaleString()}`
       ]);
 
-      autoTable(doc, {
-        startY: (doc as any).lastAutoTable.finalY + 20,
+      autoTable(pdf, {
+        startY: (pdf as any).lastAutoTable.finalY + 20,
         head: [['Clinic', 'Attended', 'No-show', 'Rate/Visit', 'Total Revenue']],
         body: tableData,
         theme: 'grid',
@@ -305,9 +306,9 @@ export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO
 
     // Add Surgical Summary if cases exist
     if (surgicalStats.totalCases > 0) {
-      const nextY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 15 : 50;
-      doc.setFontSize(14);
-      doc.text('Surgical Performance Summary', 14, nextY);
+      const nextY = (pdf as any).lastAutoTable ? (pdf as any).lastAutoTable.finalY + 15 : 50;
+      pdf.setFontSize(14);
+      pdf.text('Surgical Performance Summary', 14, nextY);
 
       const surgicalData = [
         ['Total Surgical Cases', surgicalStats.totalCases.toString()],
@@ -315,7 +316,7 @@ export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO
         ['Top Surgeon', Object.entries(surgicalStats.surgeonStats).sort((a: any, b: any) => (b[1] as number) - (a[1] as number))[0]?.[0] || 'N/A']
       ];
 
-      autoTable(doc, {
+      autoTable(pdf, {
         startY: nextY + 5,
         head: [['Metric', 'Value']],
         body: surgicalData,
@@ -324,7 +325,9 @@ export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO
       });
     }
 
-    doc.save(`${isCMO ? 'CMO' : 'CEO'}_Report_${timeRange}_${format(selectedDate, 'yyyy-MM-dd')}.pdf`);
+    const fileName = `${isCMO ? 'CMO' : 'CEO'}_Report_${timeRange}_${format(selectedDate, 'yyyy-MM-dd')}.pdf`;
+    pdf.save(fileName);
+    await AUDIT_LOGGER.log(user, 'export_ceo_report', fileName, 'system', `Range: ${timeRange}, Date: ${format(selectedDate, 'yyyy-MM-dd')}`);
   };
 
   if (loading) {

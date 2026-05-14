@@ -29,6 +29,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { CEODashboard } from './components/CEODashboard';
+import { AUDIT_LOGGER } from './lib/audit';
 import { 
   Role, 
   UserProfile, 
@@ -64,10 +65,12 @@ import {
   TrendingUp,
   Scissors,
   ShieldCheck,
-  ArrowUpDown
+  ArrowUpDown,
+  History,
+  X
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay, endOfDay, addHours, isAfter, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth } from 'date-fns';
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -145,24 +148,7 @@ const SMS_SERVICE = {
 };
 
 // --- Audit Logger (DPA Compliance) ---
-const AUDIT_LOGGER = {
-  log: async (user: UserProfile, action: string, resourceId: string, resourceType: AuditLog['resourceType'], details?: string) => {
-    try {
-      const logEntry: Omit<AuditLog, 'id'> = {
-        actorId: user.uid,
-        actorName: user.name,
-        action,
-        resourceId,
-        resourceType,
-        timestamp: new Date().toISOString(),
-        details
-      };
-      await addDoc(collection(db, 'audit_logs'), logEntry);
-    } catch (error) {
-      console.error('Audit skip (silent failure to avoid blocking):', error);
-    }
-  }
-};
+// Moved to src/lib/audit.ts
 
 // --- Components ---
 
@@ -1457,26 +1443,26 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     }
   };
 
-  const handleSavePdf = (dateToPrint?: string) => {
+  const handleSavePdf = async (dateToPrint?: string) => {
     const targetDate = dateToPrint || selectedDate;
     const bookingsToPrint = bookings.filter(b => b.reviewDate === targetDate);
     
     if (bookingsToPrint.length === 0) return;
 
-    const doc = new jsPDF();
+    const pdf = new jsPDF();
     
     // Add Hospital Header
-    doc.setFontSize(18);
-    doc.setTextColor(5, 150, 105); // emerald-600
-    doc.text('MedConnect Tumutumu', 14, 20);
+    pdf.setFontSize(18);
+    pdf.setTextColor(5, 150, 105); // emerald-600
+    pdf.text('MedConnect Tumutumu', 14, 20);
     
-    doc.setFontSize(14);
-    doc.setTextColor(100);
-    doc.text(`${activeClinicFilter} Clinic List`, 14, 30);
+    pdf.setFontSize(14);
+    pdf.setTextColor(100);
+    pdf.text(`${activeClinicFilter} Clinic List`, 14, 30);
     
-    doc.setFontSize(10);
-    doc.text(`Date: ${format(parseISO(targetDate), 'PPPP')}`, 14, 38);
-    doc.text(`Total Patients: ${bookingsToPrint.length}`, 14, 44);
+    pdf.setFontSize(10);
+    pdf.text(`Date: ${format(parseISO(targetDate), 'PPPP')}`, 14, 38);
+    pdf.text(`Total Patients: ${bookingsToPrint.length}`, 14, 44);
 
     const tableData = bookingsToPrint.map(b => [
       b.patientName,
@@ -1487,7 +1473,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
       b.status.toUpperCase()
     ]);
 
-    autoTable(doc, {
+    autoTable(pdf, {
       startY: 50,
       head: [['Patient Name', 'Phone', 'Diagnosis', 'Comments', 'Booked By', 'Status']],
       body: tableData,
@@ -1496,7 +1482,8 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
       margin: { top: 50 },
     });
 
-    doc.save(`Clinic_List_${activeClinicFilter}_${targetDate}.pdf`);
+    pdf.save(`Clinic_List_${activeClinicFilter}_${targetDate}.pdf`);
+    await AUDIT_LOGGER.log(user, 'export_clinic_list', activeClinicFilter, 'system', `Date: ${targetDate}`);
   };
 
   const handleSendBulkSms = async () => {
@@ -1987,6 +1974,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   const [newWhitelistedRole, setNewWhitelistedRole] = useState<Role>('doctor');
   const [newWhitelistedClinic, setNewWhitelistedClinic] = useState<ClinicType | ''>('');
   const [isAddingWhitelist, setIsAddingWhitelist] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
 
   const clinicTypes: ClinicType[] = [
     'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
@@ -2159,7 +2147,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
     }
   };
 
-  const handleSavePDF = (clinic: ClinicType) => {
+  const handleSavePDF = async (clinic: ClinicType) => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const bookingsToPrint = bookings.filter(b => b.clinicType === clinic && b.reviewDate === today);
     
@@ -2168,14 +2156,14 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
       return;
     }
 
-    const doc = new jsPDF();
+    const pdf = new jsPDF();
     
     // Header
-    doc.setFontSize(20);
-    doc.text(`${clinic} Clinic`, 14, 22);
-    doc.setFontSize(12);
-    doc.setTextColor(100);
-    doc.text(format(new Date(), 'PPPP'), 14, 30);
+    pdf.setFontSize(20);
+    pdf.text(`${clinic} Clinic`, 14, 22);
+    pdf.setFontSize(12);
+    pdf.setTextColor(100);
+    pdf.text(format(new Date(), 'PPPP'), 14, 30);
     
     // Table
     const tableData = bookingsToPrint.map(b => [
@@ -2185,7 +2173,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
       b.status.toUpperCase()
     ]);
 
-    autoTable(doc, {
+    autoTable(pdf, {
       startY: 40,
       head: [['Patient Name', 'Phone', 'Diagnosis', 'Status']],
       body: tableData,
@@ -2193,24 +2181,25 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
       headStyles: { fillColor: [16, 185, 129] }, // emerald-600
     });
 
-    doc.save(`${clinic}_Clinic_${today}.pdf`);
+    pdf.save(`${clinic}_Clinic_${today}.pdf`);
+    await AUDIT_LOGGER.log(user, 'export_admin_clinic_list', clinic, 'system', `Date: ${today}`);
   };
 
-  const handleSaveMasterListPDF = () => {
+  const handleSaveMasterListPDF = async () => {
     if (masterPatientList.length === 0) {
       alert('No patients in the list to export.');
       return;
     }
 
-    const doc = new jsPDF();
+    const pdf = new jsPDF();
     const today = format(new Date(), 'yyyy-MM-dd');
     
     // Header
-    doc.setFontSize(20);
-    doc.text('Master Patient Database', 14, 22);
-    doc.setFontSize(12);
-    doc.setTextColor(100);
-    doc.text(`Exported on ${format(new Date(), 'PPPP')}`, 14, 30);
+    pdf.setFontSize(20);
+    pdf.text('Master Patient Database', 14, 22);
+    pdf.setFontSize(12);
+    pdf.setTextColor(100);
+    pdf.text(`Exported on ${format(new Date(), 'PPPP')}`, 14, 30);
     
     // Table
     const tableData = masterPatientList.map(p => [
@@ -2221,7 +2210,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
       p.visits.map(v => v.status.toUpperCase()).join('\n')
     ]);
 
-    autoTable(doc, {
+    autoTable(pdf, {
       startY: 40,
       head: [['Patient Name', 'Phone Number', 'Clinics Visited', 'Dates Attended', 'Status']],
       body: tableData,
@@ -2230,7 +2219,8 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
       styles: { cellPadding: 3, fontSize: 10 },
     });
 
-    doc.save(`Master_Patient_List_${today}.pdf`);
+    pdf.save(`Master_Patient_List_${today}.pdf`);
+    await AUDIT_LOGGER.log(user, 'export_master_patient_list', 'all_patients', 'system', `Records: ${masterPatientList.length}`);
   };
 
   const handleSendMarketing = async () => {
@@ -2265,55 +2255,69 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex gap-4 mb-8 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 w-fit">
-        <button 
-          onClick={() => setActiveTab('overview')}
-          className={cn(
-            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
-            activeTab === 'overview' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
-          )}
-        >
-          <LayoutDashboard className="w-4 h-4" />
-          Clinics Overview
-        </button>
-        <button 
-          onClick={() => setActiveTab('master_list')}
-          className={cn(
-            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
-            activeTab === 'master_list' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
-          )}
-        >
-          <Users className="w-4 h-4" />
-          Master Patient List
-        </button>
-        <button 
-          onClick={() => setActiveTab('user_management')}
-          className={cn(
-            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
-            activeTab === 'user_management' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
-          )}
-        >
-          <UserCircle className="w-4 h-4" />
-          User Management
-        </button>
-        <button 
-          onClick={() => setActiveTab('marketing_history')}
-          className={cn(
-            "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
-            activeTab === 'marketing_history' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
-          )}
-        >
-          <Search className="w-4 h-4" />
-          Marketing History
-        </button>
-        <button 
-          onClick={() => setShowBookingModal(true)}
-          className="px-6 py-2.5 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all flex items-center gap-2 shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Book Patient
-        </button>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+        <div className="flex gap-4 bg-white p-2 rounded-2xl shadow-sm border border-slate-100 w-fit">
+          <button 
+            onClick={() => setActiveTab('overview')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+              activeTab === 'overview' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            Clinics Overview
+          </button>
+          <button 
+            onClick={() => setActiveTab('master_list')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+              activeTab === 'master_list' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Users className="w-4 h-4" />
+            Master Patient List
+          </button>
+          <button 
+            onClick={() => setActiveTab('user_management')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+              activeTab === 'user_management' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <UserCircle className="w-4 h-4" />
+            User Management
+          </button>
+          <button 
+            onClick={() => setActiveTab('marketing_history')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+              activeTab === 'marketing_history' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <History className="w-4 h-4" />
+            Marketing History
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowLogs(true)}
+            className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold flex items-center gap-3 transition-all shadow-lg active:scale-95"
+          >
+            <ShieldCheck className="w-5 h-5" />
+            DPA Audit Logs
+          </button>
+          <button 
+            onClick={() => setShowBookingModal(true)}
+            className="px-6 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all flex items-center gap-2 shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Book Patient
+          </button>
+        </div>
       </div>
+
+      {showLogs && <AuditLogsModal onClose={() => setShowLogs(false)} user={user} />}
 
       {activeTab === 'overview' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -2634,16 +2638,180 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   );
 };
 
+// --- Audit Logs Modal ---
+const AuditLogsModal = ({ onClose, user }: { onClose: () => void, user: UserProfile }) => {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'audit_logs'), orderBy('timestamp', 'desc'), limit(500));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AuditLog));
+      setLogs(data);
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'audit_logs');
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const exportLogsToPDF = async () => {
+    const pdf = new jsPDF();
+    const today = format(new Date(), 'yyyy-MM-dd HH:mm');
+    
+    pdf.setFontSize(22);
+    pdf.text('PCEA Tumutumu Hospital', 14, 20);
+    pdf.setFontSize(16);
+    pdf.text('DPA 2019 Compliance Audit Log', 14, 30);
+    
+    pdf.setFontSize(10);
+    pdf.setTextColor(100);
+    pdf.text(`Official Export for ODPP • Generated by: ${user.name} (${user.email})`, 14, 38);
+    pdf.text(`Export Date: ${today}`, 14, 44);
+
+    const tableData = logs.map(log => [
+      format(parseISO(log.timestamp), 'yyyy-MM-dd HH:mm:ss'),
+      log.actorName,
+      log.action.toUpperCase(),
+      log.resourceType.toUpperCase(),
+      log.resourceId,
+      log.details || 'N/A'
+    ]);
+
+    autoTable(pdf, {
+      startY: 50,
+      head: [['Timestamp', 'User', 'Action', 'Resource', 'ID', 'Details']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [30, 41, 59], fontSize: 8 }, // slate-800
+      bodyStyles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 35 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 35 },
+      }
+    });
+
+    pdf.save(`Audit_Logs_Tumutumu_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+    await AUDIT_LOGGER.log(user, 'export_audit_logs', 'all_logs', 'system', `Records: ${logs.length}`);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white w-full max-w-6xl max-h-[90vh] rounded-[3rem] shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-slate-900 rounded-xl">
+                <History className="w-6 h-6 text-white" />
+              </div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Compliance Audit Logs</h2>
+            </div>
+            <p className="text-sm text-slate-500 mt-1">Official immutable record for DPA 2019 accountability</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={exportLogsToPDF}
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-2 transition-all shadow-md active:scale-95"
+            >
+              <Download className="w-4 h-4" />
+              Export ODPP PDF
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+              <X className="w-6 h-6 text-slate-400" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto p-8">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center h-64 gap-4">
+              <div className="w-12 h-12 border-4 border-slate-100 border-t-slate-900 rounded-full animate-spin" />
+              <p className="text-slate-400 font-bold animate-pulse">Retrieving Logs...</p>
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="text-center py-20">
+              <ShieldCheck className="w-16 h-16 text-slate-100 mx-auto mb-4" />
+              <p className="text-slate-500 font-bold">No audit logs found yet.</p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-slate-100">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50 border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Timestamp</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Actor</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Action</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Resource</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {logs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-xs text-slate-400 font-mono">
+                        {format(parseISO(log.timestamp), 'MMM d, HH:mm:ss')}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 bg-slate-100 rounded-lg flex items-center justify-center text-[10px] font-bold text-slate-500">
+                            {log.actorName.charAt(0)}
+                          </div>
+                          <span className="text-sm font-bold text-slate-700">{log.actorName}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-black uppercase tracking-wider border border-indigo-100/50">
+                          {log.action.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full font-medium">
+                          {log.resourceType}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-500 italic max-w-xs truncate">
+                        {log.details || '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Main App ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [hasLoggedLogin, setHasLoggedLogin] = useState(false);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
+        if (!hasLoggedLogin) {
+          setHasLoggedLogin(true);
+          // Initial semi-profile for logging if full profile isn't ready
+          AUDIT_LOGGER.log(
+            { uid: firebaseUser.uid, name: firebaseUser.displayName || firebaseUser.email || 'Auth User' },
+            'user_login',
+            firebaseUser.uid,
+            'auth',
+            `Session started: ${format(new Date(), 'PPP p')}`
+          );
+        }
         try {
           // Check whitelist first
           const whitelistPath = `whitelisted_emails/${firebaseUser.email?.toLowerCase() || ''}`;

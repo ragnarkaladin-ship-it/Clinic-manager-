@@ -99,7 +99,7 @@ export interface AuditLog {
   actorName: string;
   action: string;
   resourceId: string;
-  resourceType: 'booking' | 'surgical_case' | 'user' | 'marketing';
+  resourceType: 'booking' | 'surgical_case' | 'user' | 'marketing' | 'auth' | 'system';
   timestamp: string;
   details?: string;
 }
