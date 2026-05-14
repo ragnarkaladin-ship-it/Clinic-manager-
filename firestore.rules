@@ -101,7 +101,7 @@ service cloud.firestore {
     }
 
     function isValidSurgicalCase(data) {
-      return data.keys().hasAll(['patientName', 'patientNumber', 'diagnosis', 'procedure', 'department', 'surgeon', 'date', 'recordedBy', 'recordedByName', 'recordedAt']) &&
+      return data.keys().hasAll(['patientName', 'patientNumber', 'diagnosis', 'procedure', 'department', 'surgeon', 'date', 'recordedBy', 'recordedByName', 'recordedAt', 'consentGiven']) &&
              data.patientName is string && data.patientName.size() > 0 && data.patientName.size() < 100 &&
              data.patientNumber is string && data.patientNumber.size() > 0 && data.patientNumber.size() < 20 &&
              data.diagnosis is string && data.diagnosis.size() > 0 && data.diagnosis.size() < 1000 &&
@@ -110,16 +110,18 @@ service cloud.firestore {
              data.surgeon is string && data.surgeon.size() > 0 &&
              data.date is string &&
              data.recordedBy == request.auth.uid &&
-             data.recordedByName is string;
+             data.recordedByName is string &&
+             data.consentGiven == true;
     }
 
     function isValidBooking(data) {
-      return data.keys().hasAll(['patientId', 'patientName', 'patientPhone', 'diagnosis', 'clinicType', 'reviewDate', 'status', 'bookedBy', 'bookedAt']) &&
+      return data.keys().hasAll(['patientId', 'patientName', 'patientPhone', 'diagnosis', 'clinicType', 'reviewDate', 'status', 'bookedBy', 'bookedAt', 'consentGiven']) &&
              data.patientName is string && data.patientName.size() > 0 && data.patientName.size() < 100 &&
              data.patientPhone is string && data.patientPhone.size() > 0 && data.patientPhone.size() < 20 &&
              data.diagnosis is string && data.diagnosis.size() > 0 && data.diagnosis.size() < 5000 &&
              data.clinicType in ['Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'] &&
-             data.status in ['pending', 'attended', 'no-show'];
+             data.status in ['pending', 'attended', 'no-show'] &&
+             data.consentGiven == true;
     }
 
     // --- Rules ---
@@ -139,15 +141,20 @@ service cloud.firestore {
     }
 
     match /bookings/{bookingId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        isAdmin() || isCEO() || isCMO() || isDoctor() ||
+        (isConsultant() && (
+          !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+          resource.data.clinicType == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clinicType
+        ))
+      );
       allow create: if isAuthenticated() && isValidBooking(request.resource.data) && request.resource.data.bookedBy == request.auth.uid;
       allow update: if isAuthenticated() && (
-        // Consultants can update status
+        // Consultants can update status for their clinic
         (isConsultant() && 
+         resource.data.clinicType == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clinicType &&
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && 
          request.resource.data.status in ['pending', 'attended', 'no-show']
-         // Removed lock for now to troubleshoot, or we can make it more lenient (e.g. 7 days)
-         // && request.time < timestamp.value(resource.data.reviewDate + 'T23:59:59Z') + duration.value('7d')
         ) ||
         // Owners can update their bookings
         (resource.data.bookedBy == request.auth.uid && isValidBooking(request.resource.data)) ||
@@ -157,7 +164,7 @@ service cloud.firestore {
     }
 
     match /patients/{patientId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAuthenticated() && (isAdmin() || isCEO() || isCMO() || isDoctor() || isConsultant() || isTheatre());
     }
 
     match /whitelisted_emails/{email} {
@@ -167,15 +174,21 @@ service cloud.firestore {
 
     match /marketing_messages/{messageId} {
       allow read: if isAdmin() || isCEO() || isCMO();
-      allow create: if isAdmin() && request.resource.data.sentBy == request.auth.uid;
-      allow update, delete: if false; // History should be immutable
+      allow create: if (isAdmin() || isCEO() || isCMO()) && request.resource.data.sentBy == request.auth.uid;
+      allow update, delete: if false; 
     }
 
     match /surgical_cases/{caseId} {
-      allow read: if isAuthenticated();
+      allow read: if isTheatre() || isAdmin() || isCEO() || isCMO() || isDoctor();
       allow create: if (isTheatre() || isAdmin()) && isValidSurgicalCase(request.resource.data);
       allow update: if (isTheatre() && resource.data.recordedBy == request.auth.uid && isValidSurgicalCase(request.resource.data)) || isAdmin();
       allow delete: if isAdmin();
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAdmin() || isCEO();
+      allow create: if isAuthenticated(); // App records events
+      allow update, delete: if false; // Logs are immutable
     }
   }
 }

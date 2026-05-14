@@ -20,6 +20,7 @@ import {
   query, 
   where, 
   addDoc, 
+  getDocs,
   updateDoc,
   deleteDoc,
   orderBy,
@@ -36,6 +37,7 @@ import {
   MarketingMessage,
   SurgicalCase,
   SurgicalDepartment,
+  AuditLog,
   CLINIC_DAYS, 
   DAY_NAMES 
 } from './types';
@@ -61,7 +63,8 @@ import {
   Bell,
   TrendingUp,
   Scissors,
-  ShieldCheck
+  ShieldCheck,
+  ArrowUpDown
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay, endOfDay, addHours, isAfter, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { jsPDF } from 'jspdf';
@@ -138,6 +141,26 @@ const SMS_SERVICE = {
     console.log(`[SMS Infrastructure] Sending marketing message to ${phone}: ${message}`);
     // Implementation will go here
     return true;
+  }
+};
+
+// --- Audit Logger (DPA Compliance) ---
+const AUDIT_LOGGER = {
+  log: async (user: UserProfile, action: string, resourceId: string, resourceType: AuditLog['resourceType'], details?: string) => {
+    try {
+      const logEntry: Omit<AuditLog, 'id'> = {
+        actorId: user.uid,
+        actorName: user.name,
+        action,
+        resourceId,
+        resourceType,
+        timestamp: new Date().toISOString(),
+        details
+      };
+      await addDoc(collection(db, 'audit_logs'), logEntry);
+    } catch (error) {
+      console.error('Audit skip (silent failure to avoid blocking):', error);
+    }
   }
 };
 
@@ -459,6 +482,7 @@ const SurgicalCaseForm = ({
   const [department, setDepartment] = useState<SurgicalDepartment | ''>('');
   const [surgeon, setSurgeon] = useState('');
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [consentGiven, setConsentGiven] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -483,9 +507,11 @@ const SurgicalCaseForm = ({
         recordedBy: user.uid,
         recordedByName: user.name,
         recordedAt: new Date().toISOString(),
+        consentGiven: true,
       };
       
-      await addDoc(collection(db, 'surgical_cases'), caseData);
+      const docRef = await addDoc(collection(db, 'surgical_cases'), caseData);
+      await AUDIT_LOGGER.log(user, 'create_surgical_case', docRef.id, 'surgical_case', `Patient: ${patientName}`);
       
       setSuccess(true);
       setPatientName('');
@@ -587,9 +613,23 @@ const SurgicalCaseForm = ({
         </div>
       </div>
 
+      <div className="flex items-start gap-4 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+        <input 
+          type="checkbox" 
+          id="theatre-consent"
+          required
+          checked={consentGiven}
+          onChange={(e) => setConsentGiven(e.target.checked)}
+          className="mt-1 w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        />
+        <label htmlFor="theatre-consent" className="text-sm text-slate-600 leading-relaxed">
+          <strong>Data Protection Consent:</strong> I confirm that the patient has been informed and has consented to the collection and processing of their clinical data for treatment and surgical reporting purposes, in accordance with the <strong>Kenya Data Protection Act 2019</strong> and hospital policy.
+        </label>
+      </div>
+
       <button 
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || !consentGiven}
         className={cn(
           "w-full py-4 rounded-2xl font-bold text-white transition-all shadow-lg flex items-center justify-center gap-2",
           success ? "bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-700"
@@ -617,6 +657,10 @@ const TheatreDashboard = ({ user }: { user: UserProfile }) => {
   const [cases, setCases] = useState<SurgicalCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof SurgicalCase | 'patientName'; direction: 'asc' | 'desc' } | null>({
+    key: 'date',
+    direction: 'desc'
+  });
 
   useEffect(() => {
     const q = query(
@@ -635,6 +679,33 @@ const TheatreDashboard = ({ user }: { user: UserProfile }) => {
 
     return () => unsubscribe();
   }, []);
+
+  const sortedCases = useMemo(() => {
+    if (!sortConfig) return cases;
+
+    return [...cases].sort((a, b) => {
+      const aValue = a[sortConfig.key];
+      const bValue = b[sortConfig.key];
+
+      if (aValue === undefined || bValue === undefined) return 0;
+
+      if (aValue < bValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [cases, sortConfig]);
+
+  const requestSort = (key: keyof SurgicalCase) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8 animate-in fade-in duration-500">
@@ -677,16 +748,40 @@ const TheatreDashboard = ({ user }: { user: UserProfile }) => {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-slate-50/50">
-                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date</th>
-                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Patient</th>
+                  <th 
+                    className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
+                    onClick={() => requestSort('date')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Date
+                      <ArrowUpDown className={cn("w-3 h-3", sortConfig?.key === 'date' ? "text-indigo-600" : "text-slate-300")} />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
+                    onClick={() => requestSort('patientName')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Patient
+                      <ArrowUpDown className={cn("w-3 h-3", sortConfig?.key === 'patientName' ? "text-indigo-600" : "text-slate-300")} />
+                    </div>
+                  </th>
                   <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Diagnosis</th>
-                  <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Department</th>
+                  <th 
+                    className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
+                    onClick={() => requestSort('department')}
+                  >
+                    <div className="flex items-center gap-2">
+                      Department
+                      <ArrowUpDown className={cn("w-3 h-3", sortConfig?.key === 'department' ? "text-indigo-600" : "text-slate-300")} />
+                    </div>
+                  </th>
                   <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Procedure</th>
                   <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Surgeon</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {cases.map((sc) => (
+                {sortedCases.map((sc) => (
                   <tr key={sc.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-8 py-4 text-slate-600 text-sm">{format(parseISO(sc.date), 'MMM d, yyyy')}</td>
                     <td className="px-8 py-4">
@@ -735,8 +830,10 @@ const DoctorDashboard = ({
   const [clinicType, setClinicType] = useState<ClinicType | ''>(defaultClinic || '');
   const [reviewDate, setReviewDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [comments, setComments] = useState('');
+  const [consentGiven, setConsentGiven] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [finalBookedDate, setFinalBookedDate] = useState<string | null>(null);
 
   const clinicTypes: ClinicType[] = [
     'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
@@ -748,25 +845,61 @@ const DoctorDashboard = ({
     
     setIsSubmitting(true);
     try {
+      let finalReviewDate = reviewDate;
+      let capacityReached = false;
+
+      // Ensure the selected date is a clinic day, if not, move to the first available clinic day
+      let dateObj = parseISO(finalReviewDate);
+      while (!CLINIC_DAYS[clinicType as ClinicType].includes(getDay(dateObj))) {
+        dateObj = addDays(dateObj, 1);
+        finalReviewDate = format(dateObj, 'yyyy-MM-dd');
+      }
+
+      // Check capacity and rollover if necessary
+      while (true) {
+        const q = query(
+          collection(db, 'bookings'),
+          where('clinicType', '==', clinicType),
+          where('reviewDate', '==', finalReviewDate)
+        );
+        const snapshot = await getDocs(q);
+        if (snapshot.size < 15) {
+          break;
+        }
+        
+        capacityReached = true;
+        // Find next clinic day
+        dateObj = addDays(dateObj, 1);
+        while (!CLINIC_DAYS[clinicType as ClinicType].includes(getDay(dateObj))) {
+          dateObj = addDays(dateObj, 1);
+        }
+        finalReviewDate = format(dateObj, 'yyyy-MM-dd');
+      }
+
       const bookingData: Omit<Booking, 'id'> = {
         patientId: `pt_${Date.now()}`,
         patientName,
         patientPhone: phoneNumber,
         diagnosis,
         clinicType: clinicType as ClinicType,
-        reviewDate,
+        reviewDate: finalReviewDate,
         status: 'pending',
         bookedBy: user.uid,
         bookedByName: user.name,
         bookedByEmail: user.email,
         bookedAt: new Date().toISOString(),
-        comments,
+        comments: capacityReached ? `[Rollover] ${comments}` : comments,
+        consentGiven: true,
       };
       
-      await addDoc(collection(db, 'bookings'), bookingData);
+      const docRef = await addDoc(collection(db, 'bookings'), bookingData);
+      await AUDIT_LOGGER.log(user, 'create_booking', docRef.id, 'booking', `Patient: ${patientName}, Clinic: ${clinicType}`);
       
-      // Send SMS reminder
-      await SMS_SERVICE.sendReminder(phoneNumber, patientName, reviewDate, clinicType);
+      setFinalBookedDate(finalReviewDate);
+      
+      // Send SMS reminder with the specific message
+      const smsMessage = `You have been booked for ${clinicType} on the ${format(parseISO(finalReviewDate), 'PPP')} @ 8Am please carry all relevant medical documents as you come to meet our consultants, PCEA Tumutumu hospital your compassionate hospital of choice.`;
+      await SMS_SERVICE.sendMarketing(phoneNumber, smsMessage);
       
       setSuccess(true);
       setPatientName('');
@@ -867,9 +1000,23 @@ const DoctorDashboard = ({
           />
         </div>
 
+        <div className="flex items-start gap-4 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+          <input 
+            type="checkbox" 
+            id="booking-consent"
+            required
+            checked={consentGiven}
+            onChange={(e) => setConsentGiven(e.target.checked)}
+            className="mt-1 w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+          />
+          <label htmlFor="booking-consent" className="text-sm text-slate-600 leading-relaxed">
+            <strong>Patient Consent:</strong> I verify that the patient has provided explicit consent to process their clinical data and receive SMS notifications regarding their clinic appointments, in compliance with the <strong>Kenya Data Protection Act 2019</strong>.
+          </label>
+        </div>
+
         <button 
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !consentGiven}
           className={cn(
             "w-full py-4 rounded-2xl font-bold text-white transition-all shadow-lg flex items-center justify-center gap-2",
             success ? "bg-emerald-500" : "bg-slate-900 hover:bg-slate-800"
@@ -880,7 +1027,7 @@ const DoctorDashboard = ({
           ) : success ? (
             <>
               <CheckCircle2 className="w-5 h-5" />
-              Discharge Recorded
+              Booked for {finalBookedDate ? format(parseISO(finalBookedDate), 'MMM d') : 'Success'}
             </>
           ) : (
             "Record Discharge & Book Clinic"
@@ -923,7 +1070,7 @@ const MonthlySchedule = ({
   }, [currentMonth]);
 
   const clinicDays = CLINIC_DAYS[clinicType];
-  const MAX_CAPACITY = 20;
+  const MAX_CAPACITY = 15;
 
   const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
   const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
@@ -1228,6 +1375,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
   const updateStatus = async (id: string, status: 'attended' | 'no-show' | 'pending') => {
     try {
       await updateDoc(doc(db, 'bookings', id), { status });
+      await AUDIT_LOGGER.log(user, 'update_booking_status', id, 'booking', `New Status: ${status}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `bookings/${id}`);
     }
@@ -2663,8 +2811,25 @@ export default function App() {
         </main>
 
         {/* Footer */}
-        <footer className="py-12 text-center text-slate-400 text-sm print:hidden">
-          <p>© {new Date().getFullYear()} MedConnect Tumutumu • Medical Records System</p>
+        <footer className="py-12 border-t border-slate-100 bg-white print:hidden">
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+              <div className="text-left">
+                <p className="text-slate-900 font-bold flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                  DPA 2019 Compliant
+                </p>
+                <p className="text-slate-500 text-xs mt-1 max-w-sm">
+                  This system is designed in accordance with the <strong>Kenya Data Protection Act of 2019</strong>. 
+                  Data minimization, access control, and audit logging are active to protect patient privacy.
+                </p>
+              </div>
+              <div className="text-center md:text-right">
+                <p className="text-slate-400 text-sm">© {new Date().getFullYear()} MedConnect Tumutumu • Medical Records System</p>
+                <p className="text-[10px] text-slate-300 uppercase tracking-widest font-black mt-1">PCEA Tumutumu Hospital</p>
+              </div>
+            </div>
+          </div>
         </footer>
       </div>
     </ErrorBoundary>

@@ -22,6 +22,7 @@ export interface SurgicalCase {
   recordedBy: string; // uid
   recordedByName: string;
   recordedAt: string; // ISO date-time string
+  consentGiven: boolean; // DPA compliance
 }
 
 export type ClinicType = 
@@ -62,6 +63,7 @@ export interface Booking {
   bookedByEmail: string; // email of the person who booked
   bookedAt: string; // ISO date-time string
   comments?: string;
+  consentGiven: boolean; // DPA compliance
 }
 
 export interface MarketingMessage {
@@ -90,3 +92,14 @@ export const CLINIC_DAYS: Record<ClinicType, number[]> = {
 };
 
 export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+export interface AuditLog {
+  id: string;
+  actorId: string;
+  actorName: string;
+  action: string;
+  resourceId: string;
+  resourceType: 'booking' | 'surgical_case' | 'user' | 'marketing';
+  timestamp: string;
+  details?: string;
+}
