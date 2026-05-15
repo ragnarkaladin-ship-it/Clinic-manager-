@@ -9,7 +9,8 @@ import {
   signInWithPopup, 
   onAuthStateChanged, 
   signOut, 
-  User 
+  User,
+  browserPopupRedirectResolver
 } from 'firebase/auth';
 import { 
   doc, 
@@ -210,12 +211,16 @@ const Login = () => {
     setError(null);
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     } catch (error: any) {
-      const ignoredErrors = ['auth/cancelled-popup-request', 'auth/popup-closed-by-user'];
-      if (!ignoredErrors.includes(error.code)) {
-        console.error('Login error:', error);
-        setError(`Sign-in failed: ${error.message || 'Please try again.'}`);
+      if (error.code === 'auth/network-request-failed') {
+        setError('Network error: Authentication request was blocked or failed. Please check if your browser blocks third-party cookies or if you have an ad-blocker enabled.');
+      } else {
+        const ignoredErrors = ['auth/cancelled-popup-request', 'auth/popup-closed-by-user'];
+        if (!ignoredErrors.includes(error.code)) {
+          console.error('Login error:', error);
+          setError(`Sign-in failed: ${error.message || 'Please try again.'}`);
+        }
       }
     } finally {
       setIsLoggingIn(false);
@@ -816,6 +821,7 @@ const DoctorDashboard = ({
   const [clinicType, setClinicType] = useState<ClinicType | ''>(defaultClinic || '');
   const [reviewDate, setReviewDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [comments, setComments] = useState('');
+  const [isWalkIn, setIsWalkIn] = useState(false);
   const [consentGiven, setConsentGiven] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -874,6 +880,7 @@ const DoctorDashboard = ({
         bookedByName: user.name,
         bookedByEmail: user.email,
         bookedAt: new Date().toISOString(),
+        isWalkIn,
         comments: capacityReached ? `[Rollover] ${comments}` : comments,
         consentGiven: true,
       };
@@ -894,6 +901,7 @@ const DoctorDashboard = ({
       setClinicType('');
       setReviewDate('');
       setComments('');
+      setIsWalkIn(false);
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'bookings');
@@ -984,6 +992,21 @@ const DoctorDashboard = ({
             className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[80px]"
             placeholder="Any extra notes for the consultant..."
           />
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <input 
+              type="checkbox" 
+              id="is-walk-in"
+              checked={isWalkIn}
+              onChange={(e) => setIsWalkIn(e.target.checked)}
+              className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            <label htmlFor="is-walk-in" className="text-sm font-semibold text-slate-700">
+              This is a Walk-in Patient
+            </label>
+          </div>
         </div>
 
         <div className="flex items-start gap-4 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
@@ -1689,7 +1712,12 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                 {filteredBookings.length > 0 ? filteredBookings.map(booking => (
                   <tr key={booking.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="p-6">
-                      <div className="font-bold text-slate-900">{booking.patientName}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-bold text-slate-900">{booking.patientName}</div>
+                        {booking.isWalkIn && (
+                          <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold uppercase">Walk-in</span>
+                        )}
+                      </div>
                       <div className="text-sm text-slate-500">{booking.patientPhone}</div>
                     </td>
                     <td className="p-6">
@@ -1807,7 +1835,12 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <h4 className="font-bold text-slate-900">{booking.patientName}</h4>
-                        <p className="text-xs text-slate-500">{booking.patientPhone}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs text-slate-500">{booking.patientPhone}</p>
+                          {booking.isWalkIn && (
+                            <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold uppercase">Walk-in</span>
+                          )}
+                        </div>
                       </div>
                       <span className={cn(
                         "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-tighter",
@@ -1968,6 +2001,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   const [marketingMessages, setMarketingMessages] = useState<MarketingMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [showMarketingModal, setShowMarketingModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'master_list' | 'user_management' | 'marketing_history'>('overview');
   const [whitelistedEmails, setWhitelistedEmails] = useState<{email: string, role: Role}[]>([]);
   const [newWhitelistedEmail, setNewWhitelistedEmail] = useState('');
@@ -2308,6 +2342,13 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
             DPA Audit Logs
           </button>
           <button 
+            onClick={() => setShowMarketingModal(true)}
+            className="px-6 py-3 bg-white border-2 border-slate-100 text-indigo-600 rounded-xl font-bold hover:border-indigo-200 hover:bg-indigo-50 transition-all flex items-center gap-2 shadow-sm"
+          >
+            <Send className="w-4 h-4" />
+            SMS Broadcast
+          </button>
+          <button 
             onClick={() => setShowBookingModal(true)}
             className="px-6 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all flex items-center gap-2 shadow-sm"
           >
@@ -2445,32 +2486,6 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">Marketing Campaign</h3>
-            <p className="text-sm text-slate-500 mb-6">Send a bulk SMS message to all patients in the filtered list above.</p>
-            
-            <div className="space-y-4">
-              <textarea 
-                placeholder="Type your marketing message here..."
-                value={marketingMessage}
-                onChange={(e) => setMarketingMessage(e.target.value)}
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[120px]"
-              />
-              <button 
-                onClick={handleSendMarketing}
-                disabled={isSending || !marketingMessage.trim() || masterPatientList.length === 0}
-                className="px-8 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
-              >
-                {isSending ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Plus className="w-5 h-5" />
-                )}
-                {isSending ? 'Sending Messages...' : `Send to ${masterPatientList.length} Patients`}
-              </button>
             </div>
           </div>
         </div>
@@ -2631,6 +2646,62 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
               </button>
             </div>
             <DoctorDashboard user={user} isModal={true} />
+          </div>
+        </div>
+      )}
+
+      {/* Marketing Broadcast Modal */}
+      {showMarketingModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-left">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 md:p-8 animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-900">SMS Marketing Broadcast</h3>
+              <button onClick={() => setShowMarketingModal(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <XCircle className="w-6 h-6 text-slate-400" />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-3">
+                <Users className="w-5 h-5 text-emerald-600 mt-0.5" />
+                <div className="text-sm text-emerald-800">
+                  This message will be sent to <strong>{masterPatientList.length} patients</strong> based on your current filters in the Master List tab.
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Campaign Message</label>
+                <textarea 
+                  placeholder="Type your marketing or informational message here..."
+                  value={marketingMessage}
+                  onChange={(e) => setMarketingMessage(e.target.value)}
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all min-h-[160px] text-sm leading-relaxed"
+                />
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Message Preview</div>
+                <div className="text-sm text-slate-600 italic">
+                  {marketingMessage || "Start typing to see preview..."}
+                </div>
+              </div>
+
+              <button 
+                onClick={async () => {
+                  await handleSendMarketing();
+                  setShowMarketingModal(false);
+                }}
+                disabled={isSending || !marketingMessage.trim() || masterPatientList.length === 0}
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50"
+              >
+                {isSending ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+                {isSending ? 'Sending Broadcast...' : `Broadcast to ${masterPatientList.length} Patients`}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2796,6 +2867,19 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   const [hasLoggedLogin, setHasLoggedLogin] = useState(false);
+
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error: any) {
+        if (error.message?.includes('the client is offline')) {
+          console.error("Firebase connection check: Client appears to be offline or blocked.");
+        }
+      }
+    };
+    testConnection();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {

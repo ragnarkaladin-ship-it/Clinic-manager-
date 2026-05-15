@@ -62,6 +62,7 @@ export interface Booking {
   bookedByName: string; // name of the person who booked
   bookedByEmail: string; // email of the person who booked
   bookedAt: string; // ISO date-time string
+  isWalkIn?: boolean;
   comments?: string;
   consentGiven: boolean; // DPA compliance
 }
@@ -82,13 +83,13 @@ export interface WhitelistedEmail {
 }
 
 export const CLINIC_DAYS: Record<ClinicType, number[]> = {
-  'Pediatrics': [1, 3], // Mon, Wed
-  'Neuro': [1], // Mon
-  'ENT': [2], // Tue
-  'Surgical': [1], // Mon
-  'Orthopedic': [3], // Wed
-  'Gynae/Obs': [2, 3], // Tue, Wed
-  'MOPC': [3, 5], // Wed, Fri
+  'Pediatrics': [0, 1, 2, 3, 4, 5, 6], // All days for testing
+  'Neuro': [0, 1, 2, 3, 4, 5, 6],
+  'ENT': [0, 1, 2, 3, 4, 5, 6],
+  'Surgical': [0, 1, 2, 3, 4, 5, 6],
+  'Orthopedic': [0, 1, 2, 3, 4, 5, 6],
+  'Gynae/Obs': [0, 1, 2, 3, 4, 5, 6],
+  'MOPC': [0, 1, 2, 3, 4, 5, 6],
 };
 
 export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
