@@ -103,4 +103,5 @@ export interface AuditLog {
   resourceType: 'booking' | 'surgical_case' | 'user' | 'marketing' | 'auth' | 'system';
   timestamp: string;
   details?: string;
+  ipAddress?: string;
 }

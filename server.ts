@@ -15,6 +15,24 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+app.get("/api/ip", (req, res) => {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  let ip = '';
+  if (typeof forwardedFor === 'string') {
+    ip = forwardedFor.split(',')[0].trim();
+  } else if (Array.isArray(forwardedFor)) {
+    ip = forwardedFor[0].trim();
+  } else {
+    ip = (req.headers['x-real-ip'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  }
+  
+  // Clean up IPv6 loopback representation if needed
+  if (ip === '::1' || ip === '::ffff:127.0.0.1') {
+    ip = '127.0.0.1';
+  }
+  res.json({ ip });
+});
+
 // Vite middleware for development
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

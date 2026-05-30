@@ -2744,6 +2744,7 @@ const AuditLogsModal = ({ onClose, user }: { onClose: () => void, user: UserProf
     const tableData = logs.map(log => [
       format(parseISO(log.timestamp), 'yyyy-MM-dd HH:mm:ss'),
       log.actorName,
+      log.ipAddress || 'N/A',
       log.action.toUpperCase(),
       log.resourceType.toUpperCase(),
       log.resourceId,
@@ -2752,17 +2753,18 @@ const AuditLogsModal = ({ onClose, user }: { onClose: () => void, user: UserProf
 
     autoTable(pdf, {
       startY: 50,
-      head: [['Timestamp', 'User', 'Action', 'Resource', 'ID', 'Details']],
+      head: [['Timestamp', 'User', 'IP Address', 'Action', 'Resource', 'ID', 'Details']],
       body: tableData,
       theme: 'striped',
       headStyles: { fillColor: [30, 41, 59], fontSize: 8 }, // slate-800
       bodyStyles: { fontSize: 8 },
       columnStyles: {
-        0: { cellWidth: 30 },
+        0: { cellWidth: 25 },
         1: { cellWidth: 25 },
-        2: { cellWidth: 35 },
-        3: { cellWidth: 25 },
-        4: { cellWidth: 35 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 25 },
       }
     });
 
@@ -2816,6 +2818,7 @@ const AuditLogsModal = ({ onClose, user }: { onClose: () => void, user: UserProf
                   <tr>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Timestamp</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Actor</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">IP Address</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Action</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Resource</th>
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap">Details</th>
@@ -2834,6 +2837,9 @@ const AuditLogsModal = ({ onClose, user }: { onClose: () => void, user: UserProf
                           </div>
                           <span className="text-sm font-bold text-slate-700">{log.actorName}</span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-slate-500 font-mono">
+                        {log.ipAddress || '-'}
                       </td>
                       <td className="px-6 py-4">
                         <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-[10px] font-black uppercase tracking-wider border border-indigo-100/50">
