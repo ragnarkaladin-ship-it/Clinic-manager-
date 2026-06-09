@@ -30,6 +30,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { CEODashboard } from './components/CEODashboard';
+import PatientDetailsDrawer from './components/PatientDetailsDrawer';
 import { AUDIT_LOGGER } from './lib/audit';
 import { 
   Role, 
@@ -2009,6 +2010,8 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   const [newWhitelistedClinic, setNewWhitelistedClinic] = useState<ClinicType | ''>('');
   const [isAddingWhitelist, setIsAddingWhitelist] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
+  const [selectedPatientPhone, setSelectedPatientPhone] = useState<string | null>(null);
+  const [selectedPatientName, setSelectedPatientName] = useState<string>('');
 
   const clinicTypes: ClinicType[] = [
     'Pediatrics', 'Neuro', 'ENT', 'Surgical', 'Orthopedic', 'Gynae/Obs', 'MOPC'
@@ -2129,6 +2132,11 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
       p.phone.includes(searchQuery)
     );
   }, [bookings, searchQuery]);
+
+  const selectedPatientBookings = useMemo(() => {
+    if (!selectedPatientPhone) return [];
+    return bookings.filter(b => b.patientPhone === selectedPatientPhone);
+  }, [bookings, selectedPatientPhone]);
 
   const handlePrintClinic = (clinic: ClinicType) => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -2445,7 +2453,18 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                 <tbody className="divide-y divide-slate-50">
                   {masterPatientList.map(patient => (
                     <tr key={patient.phone} className="group hover:bg-slate-50 transition-colors">
-                      <td className="py-4 font-bold text-slate-900">{patient.name}</td>
+                      <td className="py-4">
+                        <button 
+                          onClick={() => { 
+                            setSelectedPatientName(patient.name); 
+                            setSelectedPatientPhone(patient.phone); 
+                          }} 
+                          className="text-left font-bold text-slate-900 group-hover:text-emerald-600 hover:underline cursor-pointer transition-all duration-150 outline-none flex items-center gap-2"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          {patient.name}
+                        </button>
+                      </td>
                       <td className="py-4 text-slate-600">{patient.phone}</td>
                       <td className="py-4">
                         <div className="flex flex-col gap-2">
@@ -2704,6 +2723,15 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {selectedPatientPhone && (
+        <PatientDetailsDrawer
+          patientName={selectedPatientName}
+          patientPhone={selectedPatientPhone}
+          patientVisits={selectedPatientBookings}
+          onClose={() => setSelectedPatientPhone(null)}
+        />
       )}
     </div>
   );
