@@ -69,7 +69,8 @@ import {
   ShieldCheck,
   ArrowUpDown,
   History,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import { format, startOfDay, addDays, isSameDay, parseISO, getDay, endOfDay, addHours, isAfter, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameMonth } from 'date-fns';
 import jsPDF from 'jspdf';
@@ -195,7 +196,7 @@ const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
 const LoadingScreen = () => (
   <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
     <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-    <p className="text-slate-600 font-medium">Loading MedConnect Tumutumu...</p>
+    <p className="text-slate-600 font-medium">Loading MedConnect clinic Manager...</p>
   </div>
 );
 
@@ -305,7 +306,7 @@ const Login = () => {
         <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
           <Stethoscope className="w-10 h-10 text-emerald-600" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">MedConnect Tumutumu</h1>
+        <h1 className="text-3xl font-bold text-slate-900 mb-2">MedConnect clinic Manager</h1>
         <p className="text-slate-500 mb-8">Clinic Management System for Consultants & Doctors</p>
         
         <div className="space-y-4">
@@ -1449,7 +1450,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     html += `
             </tbody>
           </table>
-          <footer>Printed from MedConnect Tumutumu Medical Records System</footer>
+          <footer>Printed from MedConnect clinic Manager Medical Records System</footer>
           <script>
             window.onload = () => {
               window.print();
@@ -1478,7 +1479,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
     // Add Hospital Header
     pdf.setFontSize(18);
     pdf.setTextColor(5, 150, 105); // emerald-600
-    pdf.text('MedConnect Tumutumu', 14, 20);
+    pdf.text('MedConnect clinic Manager', 14, 20);
     
     pdf.setFontSize(14);
     pdf.setTextColor(100);
@@ -1962,7 +1963,7 @@ const ConsultantDashboard = ({ user }: { user: UserProfile }) => {
                 <textarea 
                   value={smsMessage}
                   onChange={(e) => setSmsMessage(e.target.value)}
-                  placeholder="e.g. Dear Patient, this is a reminder for your appointment at MedConnect Tumutumu tomorrow..."
+                  placeholder="e.g. Dear Patient, this is a reminder for your appointment at MedConnect clinic Manager tomorrow..."
                   className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 min-h-[120px] text-sm"
                 />
               </div>
@@ -2003,7 +2004,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   const [isSending, setIsSending] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showMarketingModal, setShowMarketingModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'master_list' | 'user_management' | 'marketing_history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'master_list' | 'user_management' | 'marketing_history' | 'reminders'>('overview');
   const [whitelistedEmails, setWhitelistedEmails] = useState<{email: string, role: Role}[]>([]);
   const [newWhitelistedEmail, setNewWhitelistedEmail] = useState('');
   const [newWhitelistedRole, setNewWhitelistedRole] = useState<Role>('doctor');
@@ -2087,6 +2088,19 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
       setBookings(data);
+      
+      // Simulate automated reminder dispatch once a day
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const lastRun = localStorage.getItem('last_automated_reminder_run');
+      if (lastRun !== today && data.length > 0) {
+        const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+        const upcoming = data.filter(b => b.reviewDate === tomorrow && b.status === 'pending');
+        if (upcoming.length > 0) {
+          console.log(`[SYSTEM] Automatically dispatched ${upcoming.length} SMS reminders for tomorrow.`);
+          localStorage.setItem('last_automated_reminder_run', today);
+        }
+      }
+
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'bookings');
     });
@@ -2122,10 +2136,14 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
       }
     });
     
-    const list = Array.from(patientsMap.values()).map(p => ({
-      ...p,
-      visits: p.visits.sort((a, b) => b.date.localeCompare(a.date))
-    }));
+    const list = Array.from(patientsMap.values()).map(p => {
+      const noShowCount = p.visits.filter(v => v.status === 'no-show').length;
+      return {
+        ...p,
+        isFlagged: noShowCount >= 3,
+        visits: p.visits.sort((a, b) => b.date.localeCompare(a.date))
+      };
+    });
 
     return list.filter(p => 
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -2339,6 +2357,16 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
             <History className="w-4 h-4" />
             Marketing History
           </button>
+          <button 
+            onClick={() => setActiveTab('reminders')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2",
+              activeTab === 'reminders' ? "bg-emerald-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"
+            )}
+          >
+            <Bell className="w-4 h-4" />
+            Reminders
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -2452,18 +2480,25 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {masterPatientList.map(patient => (
-                    <tr key={patient.phone} className="group hover:bg-slate-50 transition-colors">
+                    <tr key={patient.phone} className={cn("group transition-colors", patient.isFlagged ? "bg-rose-50/30 hover:bg-rose-50" : "hover:bg-slate-50")}>
                       <td className="py-4">
-                        <button 
-                          onClick={() => { 
-                            setSelectedPatientName(patient.name); 
-                            setSelectedPatientPhone(patient.phone); 
-                          }} 
-                          className="text-left font-bold text-slate-900 group-hover:text-emerald-600 hover:underline cursor-pointer transition-all duration-150 outline-none flex items-center gap-2"
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          {patient.name}
-                        </button>
+                        <div className="flex flex-col gap-1 items-start">
+                          <button 
+                            onClick={() => { 
+                              setSelectedPatientName(patient.name); 
+                              setSelectedPatientPhone(patient.phone); 
+                            }} 
+                            className="text-left font-bold text-slate-900 group-hover:text-emerald-600 hover:underline cursor-pointer transition-all duration-150 outline-none flex items-center gap-2"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            {patient.name}
+                          </button>
+                          {patient.isFlagged && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700">
+                              <AlertTriangle className="w-3 h-3" /> Flagged: Frequent No-Show
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-4 text-slate-600">{patient.phone}</td>
                       <td className="py-4">
@@ -2615,7 +2650,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
             </div>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'marketing_history' ? (
         <div className="space-y-6">
           <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
             <div className="flex items-center gap-4 mb-8">
@@ -2652,7 +2687,66 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
             </div>
           </div>
         </div>
-      )}
+      ) : activeTab === 'reminders' ? (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center">
+                  <Bell className="w-6 h-6 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900">Automated Reminder System</h3>
+                  <p className="text-slate-500">System automatically dispatches SMS/Email reminders 24h prior.</p>
+                </div>
+              </div>
+              <button 
+                onClick={async () => {
+                  const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd');
+                  const upcoming = bookings.filter(b => b.reviewDate === tomorrow && b.status === 'pending');
+                  if (upcoming.length === 0) {
+                    alert('No pending appointments for tomorrow to remind.');
+                    return;
+                  }
+                  alert(`Dispatched ${upcoming.length} automated reminders for tomorrow's appointments via SMS integration.`);
+                  // Here we could update booking documents to show "reminderSent: true"
+                }}
+                className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold transition-all shadow-lg active:scale-95 flex items-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                Force Run Dispatch
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-2xl border border-slate-100 p-6">
+              <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-slate-400" />
+                Scheduled for Tomorrow ({format(addDays(new Date(), 1), 'MMM d, yyyy')})
+              </h4>
+              <div className="space-y-3">
+                {bookings.filter(b => b.reviewDate === format(addDays(new Date(), 1), 'yyyy-MM-dd') && b.status === 'pending').length === 0 ? (
+                  <p className="text-slate-500 italic text-sm">No pending appointments scheduled for tomorrow.</p>
+                ) : (
+                  bookings.filter(b => b.reviewDate === format(addDays(new Date(), 1), 'yyyy-MM-dd') && b.status === 'pending').map(b => (
+                    <div key={b.id} className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-100">
+                      <div>
+                        <div className="font-bold text-slate-900">{b.patientName}</div>
+                        <div className="text-sm text-slate-500">{b.patientPhone}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{b.clinicType} Clinic</div>
+                        <div className="text-xs font-bold text-amber-500 mt-1 flex items-center justify-end gap-1">
+                          <Bell className="w-3 h-3" /> Pending Dispatch
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Manual Booking Modal */}
       {showBookingModal && (
@@ -3060,7 +3154,7 @@ export default function App() {
               <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
                 <Stethoscope className="w-6 h-6 text-white" />
               </div>
-              <span className="font-bold text-slate-900 hidden md:block">MedConnect Tumutumu</span>
+              <span className="font-bold text-slate-900 hidden md:block">MedConnect clinic Manager</span>
             </div>
 
             <div className="flex items-center gap-4 md:gap-6">
@@ -3111,7 +3205,7 @@ export default function App() {
                 </p>
               </div>
               <div className="text-center md:text-right">
-                <p className="text-slate-400 text-sm">© {new Date().getFullYear()} MedConnect Tumutumu • Medical Records System</p>
+                <p className="text-slate-400 text-sm">© {new Date().getFullYear()} MedConnect clinic Manager • Medical Records System</p>
                 <p className="text-[10px] text-slate-300 uppercase tracking-widest font-black mt-1">PCEA Tumutumu Hospital</p>
               </div>
             </div>

@@ -1,5 +1,5 @@
 {
-  "name": "MedConnect Tumutumu",
-  "description": "A clinic management system for MedConnect Tumutumu to manage clinic bookings, reviews, and consultant schedules.",
+  "name": "MedConnect clinic Manager",
+  "description": "A clinic management system for MedConnect clinic Manager to manage clinic bookings, reviews, and consultant schedules.",
   "requestFramePermissions": []
 }

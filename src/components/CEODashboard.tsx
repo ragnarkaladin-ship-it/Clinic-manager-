@@ -263,7 +263,7 @@ export const CEODashboard = ({ user, isCMO = false }: { user: UserProfile, isCMO
     const rangeText = format(dateRangeRange.start, 'PPP') + ' - ' + format(dateRangeRange.end, 'PPP');
     
     pdf.setFontSize(20);
-    pdf.text(`MedConnect Tumutumu - ${isCMO ? 'CMO' : 'CEO'} Report`, 14, 22);
+    pdf.text(`MedConnect clinic Manager - ${isCMO ? 'CMO' : 'CEO'} Report`, 14, 22);
     pdf.setFontSize(10);
     pdf.text(`Generated on: ${format(new Date(), 'PPP p')}`, 14, 30);
     pdf.text(`Report Period: ${rangeText}`, 14, 35);
