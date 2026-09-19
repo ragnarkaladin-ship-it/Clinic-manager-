@@ -10,7 +10,8 @@ import {
   onAuthStateChanged, 
   signOut, 
   User,
-  browserPopupRedirectResolver
+  browserPopupRedirectResolver,
+  signInAnonymously
 } from 'firebase/auth';
 import { 
   doc, 
@@ -200,11 +201,7 @@ const LoadingScreen = () => (
   </div>
 );
 
-interface LoginProps {
-  onStaffLogin: (user: User, profile: UserProfile) => void;
-}
-
-const Login = ({ onStaffLogin }: LoginProps) => {
+const Login = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConsultantLogin, setShowConsultantLogin] = useState(false);
@@ -263,32 +260,18 @@ const Login = ({ onStaffLogin }: LoginProps) => {
       });
 
       if (foundUser) {
-        const mockUser = {
-          uid: foundUser.email,
-          email: foundUser.email,
-          displayName: foundUser.name || foundUser.username,
-          emailVerified: true,
-          isAnonymous: false,
-          metadata: {},
-          providerData: [],
-          refreshToken: '',
-          tenantId: '',
-          delete: async () => {},
-          getIdToken: async () => '',
-          getIdTokenResult: async () => ({} as any),
-          reload: async () => {},
-          toJSON: () => ({})
-        } as unknown as User;
+        const credential = await signInAnonymously(auth);
+        const authUser = credential.user;
 
-        const profileObj: UserProfile = {
-          uid: foundUser.email,
+        const profileData = {
+          uid: authUser.uid,
           name: foundUser.name || foundUser.username,
           email: foundUser.email,
           role: foundUser.role,
-          clinicType: foundUser.clinicType
+          clinicType: foundUser.clinicType || null
         };
 
-        onStaffLogin(mockUser, profileObj);
+        await setDoc(doc(db, 'users', authUser.uid), profileData, { merge: true });
       } else {
         setError('Invalid staff username or password created by admin.');
       }
@@ -3313,7 +3296,7 @@ export default function App() {
   };
 
   if (loading) return <LoadingScreen />;
-  if (!user) return <Login onStaffLogin={(u, p) => { setUser(u); setProfile(p); }} />;
+  if (!user) return <Login />;
   if (!profile) return <RoleSelection onSelect={handleRoleSelect} />;
 
   return (

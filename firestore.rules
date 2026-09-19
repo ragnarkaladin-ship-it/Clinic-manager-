@@ -127,68 +127,33 @@ service cloud.firestore {
     // --- Rules ---
 
     match /users/{uid} {
-      allow read: if isAuthenticated();
-      allow create: if isOwner(uid) && isValidUser(request.resource.data) && (
-        request.resource.data.role != 'admin' || 
-        isAdmin() ||
-        isWhitelisted(request.resource.data.email, 'admin')
-      );
-      allow update: if isOwner(uid) && isValidUser(request.resource.data) && (
-        request.resource.data.role == resource.data.role || 
-        isAdmin() ||
-        isWhitelisted(request.resource.data.email, request.resource.data.role)
-      );
+      allow read, create, update: if isAuthenticated();
     }
 
     match /bookings/{bookingId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || isCEO() || isCMO() || isDoctor() ||
-        (isConsultant() && (
-          !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
-          resource.data.clinicType == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clinicType
-        ))
-      );
-      allow create: if isAuthenticated() && isValidBooking(request.resource.data) && request.resource.data.bookedBy == request.auth.uid;
-      allow update: if isAuthenticated() && (
-        // Consultants can update status for their clinic
-        (isConsultant() && 
-         resource.data.clinicType == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.clinicType &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && 
-         request.resource.data.status in ['pending', 'attended', 'no-show']
-        ) ||
-        // Owners can update their bookings
-        (resource.data.bookedBy == request.auth.uid && isValidBooking(request.resource.data)) ||
-        isAdmin()
-      );
-      allow delete: if isAdmin();
+      allow read, create, update, delete: if isAuthenticated();
     }
 
     match /patients/{patientId} {
-      allow read, write: if isAuthenticated() && (isAdmin() || isCEO() || isCMO() || isDoctor() || isConsultant() || isTheatre());
+      allow read, write: if isAuthenticated();
     }
 
     match /whitelisted_emails/{email} {
-      allow read: if isAuthenticated() && (isAdmin() || request.auth.token.get('email', '').lower() == email);
-      allow write: if isAdmin();
+      allow read, write: if isAuthenticated();
     }
 
     match /marketing_messages/{messageId} {
-      allow read: if isAdmin() || isCEO() || isCMO();
-      allow create: if (isAdmin() || isCEO() || isCMO()) && request.resource.data.sentBy == request.auth.uid;
+      allow read, create: if isAuthenticated();
       allow update, delete: if false; 
     }
 
     match /surgical_cases/{caseId} {
-      allow read: if isTheatre() || isAdmin() || isCEO() || isCMO() || isDoctor();
-      allow create: if (isTheatre() || isAdmin()) && isValidSurgicalCase(request.resource.data);
-      allow update: if (isTheatre() && resource.data.recordedBy == request.auth.uid && isValidSurgicalCase(request.resource.data)) || isAdmin();
-      allow delete: if isAdmin();
+      allow read, create, update, delete: if isAuthenticated();
     }
 
     match /audit_logs/{logId} {
-      allow read: if isAdmin() || isCEO();
-      allow create: if isAuthenticated(); // App records events
-      allow update, delete: if false; // Logs are immutable
+      allow read, create: if isAuthenticated();
+      allow update, delete: if false;
     }
   }
 }
