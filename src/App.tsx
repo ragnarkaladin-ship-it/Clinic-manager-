@@ -200,12 +200,20 @@ const LoadingScreen = () => (
   </div>
 );
 
-const Login = () => {
+interface LoginProps {
+  onStaffLogin: (user: User, profile: UserProfile) => void;
+}
+
+const Login = ({ onStaffLogin }: LoginProps) => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConsultantLogin, setShowConsultantLogin] = useState(false);
+  const [showStaffLogin, setShowStaffLogin] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [staffUsername, setStaffUsername] = useState('');
+  const [staffPassword, setStaffPassword] = useState('');
+  const [isStaffLoggingIn, setIsStaffLoggingIn] = useState(false);
 
   const handleGoogleLogin = async () => {
     if (isLoggingIn) return;
@@ -237,6 +245,121 @@ const Login = () => {
       setError('Invalid clinic name or password. Use "Clinic Name" and "Tumutumu".');
     }
   };
+
+  const handleStaffLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffUsername.trim() || !staffPassword.trim()) return;
+    setIsStaffLoggingIn(true);
+    setError(null);
+    try {
+      const q = query(collection(db, 'whitelisted_emails'));
+      const snapshot = await getDocs(q);
+      let foundUser: any = null;
+      snapshot.forEach(docSnap => {
+        const d = docSnap.data();
+        if (d.username && d.username.toLowerCase() === staffUsername.trim().toLowerCase() && d.password === staffPassword.trim()) {
+          foundUser = { email: docSnap.id, ...d };
+        }
+      });
+
+      if (foundUser) {
+        const mockUser = {
+          uid: foundUser.email,
+          email: foundUser.email,
+          displayName: foundUser.name || foundUser.username,
+          emailVerified: true,
+          isAnonymous: false,
+          metadata: {},
+          providerData: [],
+          refreshToken: '',
+          tenantId: '',
+          delete: async () => {},
+          getIdToken: async () => '',
+          getIdTokenResult: async () => ({} as any),
+          reload: async () => {},
+          toJSON: () => ({})
+        } as unknown as User;
+
+        const profileObj: UserProfile = {
+          uid: foundUser.email,
+          name: foundUser.name || foundUser.username,
+          email: foundUser.email,
+          role: foundUser.role,
+          clinicType: foundUser.clinicType
+        };
+
+        onStaffLogin(mockUser, profileObj);
+      } else {
+        setError('Invalid staff username or password created by admin.');
+      }
+    } catch (err: any) {
+      setError(`Login failed: ${err.message || 'Please check connection.'}`);
+    } finally {
+      setIsStaffLoggingIn(false);
+    }
+  };
+
+  if (showStaffLogin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100">
+          <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <UserCircle className="w-10 h-10 text-emerald-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2 text-center">Staff Login</h1>
+          <p className="text-slate-500 mb-8 text-center">Enter your admin-created username & password</p>
+          
+          <form onSubmit={handleStaffLoginSubmit} className="space-y-4">
+            {error && (
+              <div className="p-4 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100 mb-4 animate-in fade-in slide-in-from-top-2">
+                {error}
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Username</label>
+              <input 
+                type="text" 
+                placeholder="e.g. dr_smith"
+                value={staffUsername}
+                onChange={(e) => setStaffUsername(e.target.value)}
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+              <input 
+                type="password" 
+                placeholder="Enter password"
+                value={staffPassword}
+                onChange={(e) => setStaffPassword(e.target.value)}
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                required
+              />
+            </div>
+
+            <button 
+              type="submit"
+              disabled={isStaffLoggingIn}
+              className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+            >
+              {isStaffLoggingIn ? 'Verifying...' : 'Login with Username'}
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => setShowStaffLogin(false)}
+              className="w-full py-2 text-slate-500 text-sm font-medium hover:text-slate-700 transition-colors"
+            >
+              Back to main login
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (showConsultantLogin) {
     return (
@@ -329,7 +452,15 @@ const Login = () => {
             {isLoggingIn ? 'Connecting...' : 'Sign in with Google'}
           </button>
 
-          <div className="relative py-4">
+          <button 
+            onClick={() => setShowStaffLogin(true)}
+            className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all shadow-lg active:scale-[0.98]"
+          >
+            <UserCircle className="w-5 h-5" />
+            Staff Username Login
+          </button>
+
+          <div className="relative py-2">
             <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
             <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Consultant Access</span></div>
           </div>
@@ -2005,8 +2136,11 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showMarketingModal, setShowMarketingModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'master_list' | 'user_management' | 'marketing_history' | 'reminders'>('overview');
-  const [whitelistedEmails, setWhitelistedEmails] = useState<{email: string, role: Role}[]>([]);
+  const [whitelistedEmails, setWhitelistedEmails] = useState<{email: string, role: Role, username?: string, password?: string, name?: string}[]>([]);
   const [newWhitelistedEmail, setNewWhitelistedEmail] = useState('');
+  const [newWhitelistedUsername, setNewWhitelistedUsername] = useState('');
+  const [newWhitelistedPassword, setNewWhitelistedPassword] = useState('');
+  const [newWhitelistedName, setNewWhitelistedName] = useState('');
   const [newWhitelistedRole, setNewWhitelistedRole] = useState<Role>('doctor');
   const [newWhitelistedClinic, setNewWhitelistedClinic] = useState<ClinicType | ''>('');
   const [isAddingWhitelist, setIsAddingWhitelist] = useState(false);
@@ -2024,7 +2158,10 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
         const data = snapshot.docs.map(doc => ({ 
           email: doc.id, 
           role: doc.data().role as Role,
-          clinicType: doc.data().clinicType as ClinicType
+          clinicType: doc.data().clinicType as ClinicType,
+          username: doc.data().username,
+          password: doc.data().password,
+          name: doc.data().name
         }));
         setWhitelistedEmails(data);
       }, (error) => {
@@ -2048,11 +2185,14 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
   }, [activeTab]);
 
   const handleAddWhitelist = async () => {
-    if (!newWhitelistedEmail.trim()) return;
+    if (!newWhitelistedEmail.trim() || !newWhitelistedUsername.trim() || !newWhitelistedPassword.trim()) return;
     setIsAddingWhitelist(true);
     try {
       const data: any = {
         role: newWhitelistedRole,
+        username: newWhitelistedUsername.trim().toLowerCase(),
+        password: newWhitelistedPassword.trim(),
+        name: newWhitelistedName.trim() || newWhitelistedUsername.trim(),
         addedAt: new Date().toISOString(),
         addedBy: user.email
       };
@@ -2063,6 +2203,9 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
 
       await setDoc(doc(db, 'whitelisted_emails', newWhitelistedEmail.trim().toLowerCase()), data);
       setNewWhitelistedEmail('');
+      setNewWhitelistedUsername('');
+      setNewWhitelistedPassword('');
+      setNewWhitelistedName('');
       setNewWhitelistedClinic('');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'whitelisted_emails');
@@ -2556,18 +2699,40 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
               </div>
             </div>
 
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8">
-              <h4 className="font-bold text-slate-900 mb-4">Add New Authorized Account</h4>
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-8 space-y-4">
+              <h4 className="font-bold text-slate-900 mb-2">Add New Authorized Account & Credentials</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <input 
+                  type="email"
+                  placeholder="Email address..."
+                  value={newWhitelistedEmail}
+                  onChange={(e) => setNewWhitelistedEmail(e.target.value)}
+                  className="p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                />
+                <input 
+                  type="text"
+                  placeholder="Username (e.g. dr_john)..."
+                  value={newWhitelistedUsername}
+                  onChange={(e) => setNewWhitelistedUsername(e.target.value)}
+                  className="p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                />
+                <input 
+                  type="password"
+                  placeholder="Password for login..."
+                  value={newWhitelistedPassword}
+                  onChange={(e) => setNewWhitelistedPassword(e.target.value)}
+                  className="p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                />
+                <input 
+                  type="text"
+                  placeholder="Full Name (optional)..."
+                  value={newWhitelistedName}
+                  onChange={(e) => setNewWhitelistedName(e.target.value)}
+                  className="p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                />
+              </div>
+
               <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1">
-                  <input 
-                    type="email"
-                    placeholder="Enter email address..."
-                    value={newWhitelistedEmail}
-                    onChange={(e) => setNewWhitelistedEmail(e.target.value)}
-                    className="w-full p-4 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                  />
-                </div>
                 <div className="w-full md:w-48">
                   <select 
                     value={newWhitelistedRole}
@@ -2588,7 +2753,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                     <select 
                       value={newWhitelistedClinic}
                       onChange={(e) => setNewWhitelistedClinic(e.target.value as ClinicType)}
-                      className="w-full p-4 bg-white border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all font-bold text-emerald-700 animate-in slide-in-from-left-2 duration-300"
+                      className="w-full p-4 bg-white border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all font-bold text-emerald-700"
                     >
                       <option value="">Select Clinic...</option>
                       {clinicTypes.map(c => <option key={c} value={c}>{c} Clinic</option>)}
@@ -2598,7 +2763,7 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
 
                 <button 
                   onClick={handleAddWhitelist}
-                  disabled={isAddingWhitelist || !newWhitelistedEmail.includes('@') || (newWhitelistedRole === 'consultant' && !newWhitelistedClinic)}
+                  disabled={isAddingWhitelist || !newWhitelistedEmail.includes('@') || !newWhitelistedUsername.trim() || !newWhitelistedPassword.trim() || (newWhitelistedRole === 'consultant' && !newWhitelistedClinic)}
                   className="px-8 py-4 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isAddingWhitelist ? (
@@ -2606,36 +2771,43 @@ const AdminDashboard = ({ user }: { user: UserProfile }) => {
                   ) : (
                     <Plus className="w-5 h-5" />
                   )}
-                  Whitelist User
+                  Create Account & Whitelist
                 </button>
               </div>
             </div>
 
             <div className="space-y-4">
-              <h4 className="font-bold text-slate-900 px-2 uppercase text-xs tracking-widest text-slate-400">Current Whitelist</h4>
+              <h4 className="font-bold text-slate-900 px-2 uppercase text-xs tracking-widest text-slate-400">Current Whitelist & Staff Credentials</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {whitelistedEmails.map(userEntry => (
                   <div key={userEntry.email} className="bg-white p-5 rounded-2xl border border-slate-100 flex items-center justify-between group hover:border-emerald-200 transition-all">
                     <div>
-                      <div className="font-bold text-slate-900 truncate max-w-[150px]">{userEntry.email}</div>
-                      <span className={cn(
-                        "text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest",
-                        userEntry.role === 'admin' ? "bg-rose-50 text-rose-600" :
-                        userEntry.role === 'ceo' ? "bg-indigo-50 text-indigo-600" :
-                        userEntry.role === 'consultant' ? "bg-emerald-50 text-emerald-600" :
-                        "bg-slate-100 text-slate-600"
-                      )}>
-                        {userEntry.role}
-                      </span>
-                      {userEntry.clinicType && (
-                        <span className="block mt-1 text-[9px] font-bold text-emerald-500 uppercase tracking-tighter">
-                          • {userEntry.clinicType}
-                        </span>
+                      <div className="font-bold text-slate-900 truncate max-w-[180px]">{userEntry.name || userEntry.email}</div>
+                      <div className="text-xs text-slate-500 truncate max-w-[180px]">{userEntry.email}</div>
+                      {userEntry.username && (
+                        <div className="text-xs font-mono text-emerald-600 font-semibold mt-0.5">Username: {userEntry.username}</div>
                       )}
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className={cn(
+                          "text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest",
+                          userEntry.role === 'admin' ? "bg-rose-50 text-rose-600" :
+                          userEntry.role === 'ceo' ? "bg-indigo-50 text-indigo-600" :
+                          userEntry.role === 'consultant' ? "bg-emerald-50 text-emerald-600" :
+                          "bg-slate-100 text-slate-600"
+                        )}>
+                          {userEntry.role}
+                        </span>
+                        {userEntry.clinicType && (
+                          <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-tighter">
+                            • {userEntry.clinicType}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <button 
                       onClick={() => deleteDoc(doc(db, 'whitelisted_emails', userEntry.email))}
                       className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      title="Remove Account"
                     >
                       <XCircle className="w-5 h-5" />
                     </button>
@@ -3141,7 +3313,7 @@ export default function App() {
   };
 
   if (loading) return <LoadingScreen />;
-  if (!user) return <Login />;
+  if (!user) return <Login onStaffLogin={(u, p) => { setUser(u); setProfile(p); }} />;
   if (!profile) return <RoleSelection onSelect={handleRoleSelect} />;
 
   return (
